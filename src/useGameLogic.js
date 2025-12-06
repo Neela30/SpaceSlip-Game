@@ -20,6 +20,8 @@ const ROTATION_STEP = 90;
 const TRAIL_LENGTH = 8;
 const MAX_PARTICLES = 140;
 const STAR_COUNT = 42;
+const HITBOX_INSET = 8;
+const VISUAL_SCALE = 1.12;
 const SAT_BODY = { w: 36, h: 36 };
 const SAT_PANEL = { w: 52, h: 22 };
 const SAT_ARM = 18;
@@ -104,18 +106,11 @@ const createStarfield = () =>
   }));
 
 const driftOffsetForMode = (time, amplitude, mode, phase) => {
-  if (mode === 'saw') {
-    const t = ((time / 800 + phase) % 1) * 2 - 1;
-    return t * amplitude;
-  }
-  if (mode === 'step') {
-    const t = Math.floor((time / 600 + phase) % 6) - 3;
-    return t * (amplitude * 0.18);
-  }
   return Math.sin(time / 700 + phase) * amplitude;
 };
 const renderShape = (ctx, { x, y, width, height, rotation, type, colors, alpha = 1, scale = 1 }) => {
   const [c1, c2] = colors;
+  const size = Math.max(width, height);
   const cx = x + width / 2;
   const cy = y + height / 2;
   ctx.save();
@@ -124,58 +119,156 @@ const renderShape = (ctx, { x, y, width, height, rotation, type, colors, alpha =
   ctx.scale(scale, scale);
   ctx.globalAlpha *= alpha;
 
-  // Satellite panels
-  const panelFill = ctx.createLinearGradient(-SAT_PANEL.w, -SAT_PANEL.h / 2, SAT_PANEL.w, SAT_PANEL.h / 2);
-  panelFill.addColorStop(0, '#0a2440');
-  panelFill.addColorStop(1, '#0d4c80');
-  const panelStroke = 'rgba(120, 210, 255, 0.35)';
-  drawRoundedRect(ctx, -SAT_PANEL.w - SAT_ARM, -SAT_PANEL.h / 2, SAT_PANEL.w, SAT_PANEL.h, 6, panelFill, panelStroke);
-  drawRoundedRect(ctx, SAT_ARM, -SAT_PANEL.h / 2, SAT_PANEL.w, SAT_PANEL.h, 6, panelFill, panelStroke);
+  const drawSatellite = () => {
+    const panelW = Math.max(28, size * 0.32);
+    const panelH = Math.max(14, size * 0.16);
+    const arm = Math.max(10, size * 0.1);
+    const panelFill = ctx.createLinearGradient(-panelW, -panelH / 2, panelW, panelH / 2);
+    panelFill.addColorStop(0, '#0a2440');
+    panelFill.addColorStop(1, '#0d4c80');
+    const panelStroke = 'rgba(120, 210, 255, 0.35)';
+    drawRoundedRect(ctx, -panelW - arm, -panelH / 2, panelW, panelH, 6, panelFill, panelStroke);
+    drawRoundedRect(ctx, arm, -panelH / 2, panelW, panelH, 6, panelFill, panelStroke);
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-  ctx.lineWidth = 1;
-  [-6, 0, 6].forEach((yLine) => {
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    [-6, 0, 6].forEach((yLine) => {
+      ctx.beginPath();
+      ctx.moveTo(-panelW - arm + 4, yLine);
+      ctx.lineTo(-arm - 4, yLine);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(arm + 4, yLine);
+      ctx.lineTo(panelW + arm - 4, yLine);
+      ctx.stroke();
+    });
+
+    const bodyW = Math.max(26, size * 0.28);
+    const bodyH = Math.max(26, size * 0.28);
+    const bodyFill = ctx.createLinearGradient(-bodyW / 2, -bodyH / 2, bodyW / 2, bodyH / 2);
+    bodyFill.addColorStop(0, c1);
+    bodyFill.addColorStop(1, c2);
+    drawRoundedRect(ctx, -bodyW / 2, -bodyH / 2, bodyW, bodyH, 8, bodyFill, 'rgba(255,255,255,0.25)');
+
     ctx.beginPath();
-    ctx.moveTo(-SAT_PANEL.w - SAT_ARM + 4, yLine);
-    ctx.lineTo(-SAT_ARM - 4, yLine);
+    ctx.strokeStyle = 'rgba(200,230,255,0.8)';
+    ctx.lineWidth = 2;
+    ctx.arc(0, -bodyH / 2 - 8, 10, Math.PI * 0.2, Math.PI * 0.8);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(SAT_ARM + 4, yLine);
-    ctx.lineTo(SAT_PANEL.w + SAT_ARM - 4, yLine);
+    ctx.moveTo(0, -bodyH / 2);
+    ctx.lineTo(0, -bodyH / 2 - 8);
     ctx.stroke();
-  });
 
-  // Body
-  const bodyFill = ctx.createLinearGradient(-SAT_BODY.w / 2, -SAT_BODY.h / 2, SAT_BODY.w / 2, SAT_BODY.h / 2);
-  bodyFill.addColorStop(0, c1);
-  bodyFill.addColorStop(1, c2);
-  drawRoundedRect(ctx, -SAT_BODY.w / 2, -SAT_BODY.h / 2, SAT_BODY.w, SAT_BODY.h, 8, bodyFill, 'rgba(255,255,255,0.25)');
+    ctx.fillStyle = 'rgba(120,230,255,0.9)';
+    ctx.fillRect(-4, -4, 2, 2);
+    ctx.fillRect(2, -8, 2, 2);
+    ctx.fillRect(6, 6, 2, 2);
 
-  // Antenna dish
-  ctx.beginPath();
-  ctx.strokeStyle = 'rgba(200,230,255,0.8)';
-  ctx.lineWidth = 2;
-  ctx.arc(0, -SAT_BODY.h / 2 - 8, 10, Math.PI * 0.2, Math.PI * 0.8);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(0, -SAT_BODY.h / 2);
-  ctx.lineTo(0, -SAT_BODY.h / 2 - 8);
-  ctx.stroke();
+    ctx.fillStyle = 'rgba(255,180,120,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(-4, bodyH / 2);
+    ctx.lineTo(0, bodyH / 2 + 12 + Math.sin(performance.now() / 80) * 2);
+    ctx.lineTo(4, bodyH / 2);
+    ctx.closePath();
+    ctx.fill();
+  };
 
-  // Accent lights
-  ctx.fillStyle = 'rgba(120,230,255,0.9)';
-  ctx.fillRect(-4, -4, 2, 2);
-  ctx.fillRect(2, -8, 2, 2);
-  ctx.fillRect(6, 6, 2, 2);
+  const drawPod = () => {
+    const bodySize = size * 0.65;
+    const radius = Math.max(8, bodySize * 0.18);
+    const bodyFill = ctx.createLinearGradient(-bodySize / 2, -bodySize / 2, bodySize / 2, bodySize / 2);
+    bodyFill.addColorStop(0, '#1a2744');
+    bodyFill.addColorStop(1, '#2f8acb');
+    drawRoundedRect(ctx, -bodySize / 2, -bodySize / 2, bodySize, bodySize, radius, bodyFill, 'rgba(255,255,255,0.2)');
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.strokeRect(-bodySize / 2 + 6, -bodySize / 2 + 6, bodySize - 12, bodySize - 12);
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(120,230,255,0.9)';
+    ctx.fillRect(-4, -4, 3, 3);
+    ctx.fillRect(2, 2, 3, 3);
+  };
 
-  // Thruster cone
-  ctx.fillStyle = 'rgba(255,180,120,0.9)';
-  ctx.beginPath();
-  ctx.moveTo(-4, SAT_BODY.h / 2);
-  ctx.lineTo(0, SAT_BODY.h / 2 + 12 + Math.sin(performance.now() / 80) * 2);
-  ctx.lineTo(4, SAT_BODY.h / 2);
-  ctx.closePath();
-  ctx.fill();
+  const drawProbe = () => {
+    const orbR = size * 0.34;
+    const orbFill = ctx.createRadialGradient(0, 0, orbR * 0.3, 0, 0, orbR);
+    orbFill.addColorStop(0, '#9edcff');
+    orbFill.addColorStop(1, '#3a4f6f');
+    ctx.beginPath();
+    ctx.arc(0, 0, orbR, 0, Math.PI * 2);
+    ctx.fillStyle = orbFill;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(120, 230, 255, 0.7)';
+    ctx.lineWidth = 3;
+    const armLen = orbR * 1.6;
+    [0, 120, 240].forEach((deg) => {
+      const rad = (deg * Math.PI) / 180;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(rad) * (orbR * 0.6), Math.sin(rad) * (orbR * 0.6));
+      ctx.lineTo(Math.cos(rad) * armLen, Math.sin(rad) * armLen);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(Math.cos(rad) * armLen, Math.sin(rad) * armLen, 6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(100,210,255,0.8)';
+      ctx.fill();
+    });
+  };
+
+  const drawRocket = () => {
+    const bodyH = Math.max(size * 0.9, 70);
+    const bodyW = Math.max(size * 0.45, 28);
+    const noseH = bodyH * 0.25;
+    const finH = bodyH * 0.18;
+    const finW = bodyW * 0.65;
+
+    ctx.fillStyle = '#22314f';
+    ctx.beginPath();
+    ctx.moveTo(-bodyW / 2, bodyH / 2);
+    ctx.lineTo(-bodyW / 2 - finW, bodyH / 2 + finH);
+    ctx.lineTo(-bodyW / 2, bodyH / 2 + finH * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(bodyW / 2, bodyH / 2);
+    ctx.lineTo(bodyW / 2 + finW, bodyH / 2 + finH);
+    ctx.lineTo(bodyW / 2, bodyH / 2 + finH * 0.2);
+    ctx.closePath();
+    ctx.fill();
+
+    const bodyFill = ctx.createLinearGradient(0, -bodyH / 2, 0, bodyH / 2);
+    bodyFill.addColorStop(0, '#1b2a46');
+    bodyFill.addColorStop(1, '#3ad2ff');
+    drawRoundedRect(ctx, -bodyW / 2, -bodyH / 2, bodyW, bodyH, 14, bodyFill, 'rgba(255,255,255,0.18)');
+
+    ctx.fillStyle = 'rgba(255, 184, 94, 0.9)';
+    ctx.beginPath();
+    ctx.moveTo(-bodyW / 4, bodyH / 2);
+    ctx.lineTo(0, bodyH / 2 + 18 + Math.sin(performance.now() / 90) * 2);
+    ctx.lineTo(bodyW / 4, bodyH / 2);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(120,230,255,0.9)';
+    ctx.beginPath();
+    ctx.arc(0, -bodyH / 2 + noseH * 0.4, bodyW * 0.18, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  if (type === 'rectangle') {
+    drawSatellite();
+  } else if (type === 'square') {
+    drawPod();
+  } else if (type === 'circle') {
+    drawProbe();
+  } else {
+    drawRocket();
+  }
 
   ctx.restore();
 };
@@ -266,27 +359,47 @@ const useGameLogic = () => {
 
   const getShapeSize = useCallback((rotation = rotationRef.current, type = shapeTypeRef.current) => {
     const variant = SHAPE_LOOKUP[type] || SHAPE_VARIANTS[0];
+    let width = LONG_SIDE;
+    let height = SHORT_SIDE;
+    let insetX = HITBOX_INSET;
+    let insetY = HITBOX_INSET;
+
     if (variant.kind === 'rectangle') {
+      insetX = 18;
+      insetY = 10;
       if (rotation % 180 === 0) {
-        return { width: variant.long, height: variant.short };
+        width = variant.long;
+        height = variant.short;
+      } else {
+        width = variant.short;
+        height = variant.long;
       }
-      return { width: variant.short, height: variant.long };
-    }
-    if (variant.kind === 'square') {
-      return { width: variant.size, height: variant.size };
-    }
-    if (variant.kind === 'circle') {
-      return { width: variant.size, height: variant.size };
-    }
-    if (variant.kind === 'triangle') {
-      const base = variant.size;
-      const height = variant.size * 0.9;
+    } else if (variant.kind === 'square') {
+      insetX = insetY = 12;
+      width = variant.size;
+      height = variant.size;
+    } else if (variant.kind === 'circle') {
+      insetX = insetY = 14;
+      width = variant.size;
+      height = variant.size;
+    } else if (variant.kind === 'triangle') {
+      insetX = 16;
+      insetY = 12;
+      const base = variant.size * 0.82;
+      const triHeight = base * 0.9;
       if (rotation % 180 === 0) {
-        return { width: base, height };
+        width = base;
+        height = triHeight;
+      } else {
+        width = triHeight;
+        height = base;
       }
-      return { width: height, height: base };
     }
-    return { width: LONG_SIDE, height: SHORT_SIDE };
+
+    return {
+      width: Math.max(16, width - insetX * 2),
+      height: Math.max(16, height - insetY * 2)
+    };
   }, []);
 
   const resizeCanvas = useCallback(() => {
@@ -420,7 +533,7 @@ const useGameLogic = () => {
           type: snap.type,
           colors: snap.colors,
           alpha,
-          scale: 0.98 - idx * 0.02
+          scale: (0.98 - idx * 0.02) * VISUAL_SCALE
         });
       });
       ctx.restore();
@@ -467,7 +580,7 @@ const useGameLogic = () => {
         type: shapeTypeRef.current,
         colors: shapeColorsRef.current,
         alpha: 1,
-        scale: easedSquash
+        scale: easedSquash * VISUAL_SCALE
       });
       ctx.restore();
 
@@ -525,18 +638,16 @@ const useGameLogic = () => {
   }, []);
 
   const pickDriftMode = useCallback(() => {
-    const modes = ['sine', 'saw', 'step'];
-    const next = modes[Math.floor(Math.random() * modes.length)];
-    driftModeRef.current = next;
+    driftModeRef.current = 'sine';
     driftPhaseRef.current = Math.random() * Math.PI * 2;
   }, []);
 
   const randomGapX = useCallback(
     (width) => {
-      const wiggle = (Math.random() - 0.5) * (60 + Math.min(80, scoreRef.current * 3));
-      const base = gapXRef.current + wiggle;
-      const randomNudge = (Math.random() - 0.5) * 14;
-      return clamp(base + randomNudge, 0, GAME_WIDTH - width);
+      const margin = 6;
+      const usable = GAME_WIDTH - width - margin * 2;
+      const base = Math.random() * usable + margin;
+      return clamp(base, 0, GAME_WIDTH - width);
     },
     []
   );
