@@ -123,6 +123,10 @@
   font-weight: 700;
 }
 
+.score-stack.eta .value {
+  font-variant-numeric: tabular-nums;
+}
+
 .game-shell {
   display: grid;
   gap: 12px;
@@ -233,6 +237,10 @@
   gap: 10px;
 }
 
+.one-hand .controls-row {
+  grid-template-columns: 1fr;
+}
+
 .rotate-row {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -312,10 +320,40 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.03);
   color: #dbe6f6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .pill.muted {
   color: #b7c6d8;
+}
+
+.pill.toggle {
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.micro-tutorial {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  margin: 6px 0 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #dbe6f6;
+  font-size: 0.95rem;
+}
+
+.rotate-row.stacked {
+  grid-template-columns: 1fr;
+}
+
+.one-hand .rotate-row button {
+  font-size: 1.05rem;
+  padding: 14px;
 }
 
 @keyframes fade-in {
@@ -353,5 +391,11 @@
 
   .hint-row {
     flex-direction: column;
+  }
+
+  .rotate-btn,
+  .rotate-btn.ghost {
+    font-size: 1.05rem;
+    padding: 14px 16px;
   }
 }

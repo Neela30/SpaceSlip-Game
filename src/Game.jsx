@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import useGameLogic from './useGameLogic';
 import './Game.css';
 
@@ -15,10 +15,13 @@ const Game = () => {
     gameOver,
     score,
     highScore,
-    perfectActive
+    perfectActive,
+    timeToDrop
   } = useGameLogic();
 
   const [isMobile, setIsMobile] = useState(false);
+  const [oneHanded, setOneHanded] = useState(() => localStorage.getItem('pf-one-hand') === '1');
+  const [tutorialSeen, setTutorialSeen] = useState(() => localStorage.getItem('pf-seen-tutorial') === '1');
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 720px)');
@@ -27,6 +30,14 @@ const Game = () => {
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
   }, []);
+
+  const handleStart = useCallback(() => {
+    if (!tutorialSeen) {
+      localStorage.setItem('pf-seen-tutorial', '1');
+      setTutorialSeen(true);
+    }
+    startGame();
+  }, [startGame, tutorialSeen]);
 
   useEffect(() => {
     const handleKey = (event) => {
@@ -43,19 +54,19 @@ const Game = () => {
         togglePause();
       }
       if (event.code === 'Enter' && !gameRunning) {
-        startGame();
+        handleStart();
       }
     };
 
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [gameRunning, rotateLeft, rotateRight, startGame, togglePause]);
+  }, [gameRunning, handleStart, rotateLeft, rotateRight, togglePause]);
 
   const primaryLabel = gameRunning ? 'Restart' : gameOver ? 'Restart' : 'Start';
   const pauseLabel = paused ? 'Resume' : 'Pause';
 
   return (
-    <section className={`game-card ${isMobile ? 'mobile-card' : ''}`}>
+    <section className={`game-card ${isMobile ? 'mobile-card' : ''} ${oneHanded ? 'one-hand' : ''}`}>
       <div className="game-meta">
         <div className={`status-pill ${gameRunning ? 'status-live' : 'status-idle'}`}>
           {gameRunning ? (paused ? 'Paused' : 'Running') : 'Ready'}
@@ -68,6 +79,20 @@ const Game = () => {
           <span className="label">Best</span>
           <span className="value">{highScore}</span>
         </div>
+        <div className="score-stack eta">
+          <span className="label">Drop ETA</span>
+          <span className="value">{timeToDrop != null ? `${timeToDrop}s` : '--'}</span>
+        </div>
+        <button
+          className="pill toggle"
+          onClick={() => {
+            const next = !oneHanded;
+            setOneHanded(next);
+            localStorage.setItem('pf-one-hand', next ? '1' : '0');
+          }}
+        >
+          {oneHanded ? 'One-hand: ON' : 'One-hand: OFF'}
+        </button>
       </div>
 
       <div className="game-shell">
@@ -84,10 +109,17 @@ const Game = () => {
                 <h3>Rotate to slip through</h3>
                 <p className="overlay-copy">
                   {isMobile
-                    ? 'Mobile mode: tap Rotate Left/Right to roll the shape toward the gap. Shapes cycle circle → square → rectangle → triangle. Gap drifts and shrinks each score.'
-                    : 'Desktop mode: roll with ←/A (left) or →/D/Space (right). Shapes cycle circle → square → rectangle → triangle. Gap drifts and shrinks each score.'}
+                    ? 'Mobile: tap Rotate Left/Right to roll toward the gap. Shapes cycle circle -> square -> rectangle -> triangle. Gap drifts and shrinks each score.'
+                    : 'Desktop: roll with ArrowLeft/A (left) or ArrowRight/D/Space (right). Shapes cycle circle -> square -> rectangle -> triangle. Gap drifts and shrinks each score.'}
                 </p>
-                <button className="primary-btn" onClick={startGame}>
+                {!tutorialSeen && (
+                  <div className="micro-tutorial">
+                    <span>🎯 Align with the gap</span>
+                    <span>💫 Rotate to roll sideways</span>
+                    <span>✨ Perfect fit triggers a ribbon</span>
+                  </div>
+                )}
+                <button className="primary-btn" onClick={handleStart}>
                   Start
                 </button>
               </div>
@@ -123,7 +155,7 @@ const Game = () => {
         </div>
 
         <div className="controls-row">
-          <button className="primary-btn" onClick={gameOver ? restartGame : startGame}>
+          <button className="primary-btn" onClick={gameOver ? restartGame : handleStart}>
             {primaryLabel}
           </button>
           <button className="secondary-btn" onClick={togglePause} disabled={!gameRunning || gameOver}>
@@ -131,19 +163,19 @@ const Game = () => {
           </button>
         </div>
 
-        <div className="rotate-row">
+        <div className={`rotate-row ${oneHanded ? 'stacked' : ''}`}>
           <button className="rotate-btn ghost" onClick={rotateLeft} disabled={!gameRunning || paused || gameOver}>
-            Rotate Left (← / A)
+            {'Rotate Left (<- / A)'}
           </button>
           <button className="rotate-btn" onClick={rotateRight} disabled={!gameRunning || paused || gameOver}>
-            Rotate Right (→ / D / Space)
+            {'Rotate Right (-> / D / Space)'}
           </button>
         </div>
 
         <div className="hint-row">
-          <span className="pill muted">Desktop: ←/A rolls left • →/D/Space rolls right • P to pause</span>
-          <span className="pill">Mobile: Tap Rotate Left/Right to roll toward the gap</span>
-          <span>Shapes cycle circle → square → rectangle → triangle; gap starts wide and shrinks.</span>
+          <span className="pill muted">{'⌨️ <- / A rolls left · -> / D / Space rolls right · P pause'}</span>
+          <span className="pill">📱 Tap Rotate Left/Right · One-hand stacks controls</span>
+          <span className="pill">🎁 Perfect = ribbon + particles</span>
         </div>
       </div>
     </section>
