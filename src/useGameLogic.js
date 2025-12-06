@@ -9,7 +9,7 @@ const INITIAL_GAP = 210;
 const MIN_GAP = 74;
 const INITIAL_SPEED = 1.1;
 const SPEED_STEP = 0.2;
-const GAP_SHRINK = 5.4;
+const GAP_SHRINK = 6.4;
 const INITIAL_DRIFT = 8;
 const DRIFT_STEP = 0.9;
 const MAX_DRIFT = 40;
@@ -22,6 +22,11 @@ const MAX_PARTICLES = 140;
 const STAR_COUNT = 42;
 const HITBOX_INSET = 8;
 const VISUAL_SCALE = 1.12;
+const REWARD_FIRST_SCORE = 10;
+const REWARD_INTERVAL = 4;
+const REWARD_SIZE = 28;
+const REWARD_GAP_BONUS = 28;
+const REWARD_SPEED_SCALE = 0.72;
 const SAT_BODY = { w: 36, h: 36 };
 const SAT_PANEL = { w: 52, h: 22 };
 const SAT_ARM = 18;
@@ -108,6 +113,28 @@ const createStarfield = () =>
 const driftOffsetForMode = (time, amplitude, mode, phase) => {
   return Math.sin(time / 700 + phase) * amplitude;
 };
+
+const drawStar = (ctx, { x, y, radius, rotation = 0, fill = '#ffd166', glow = 'rgba(255, 209, 102, 0.6)' }) => {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.beginPath();
+  const spikes = 5;
+  const inner = radius * 0.48;
+  for (let i = 0; i < spikes; i++) {
+    const outerAngle = (i * 2 * Math.PI) / spikes - Math.PI / 2;
+    const innerAngle = outerAngle + Math.PI / spikes;
+    ctx.lineTo(Math.cos(outerAngle) * radius, Math.sin(outerAngle) * radius);
+    ctx.lineTo(Math.cos(innerAngle) * inner, Math.sin(innerAngle) * inner);
+  }
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.shadowColor = glow;
+  ctx.shadowBlur = 14;
+  ctx.fill();
+  ctx.restore();
+};
+
 const renderShape = (ctx, { x, y, width, height, rotation, type, colors, alpha = 1, scale = 1 }) => {
   const [c1, c2] = colors;
   const size = Math.max(width, height);
@@ -317,6 +344,9 @@ const useGameLogic = () => {
   const squashRef = useRef(1);
   const [timeToDrop, setTimeToDrop] = useState(null);
   const lastEtaUpdateRef = useRef(0);
+  const [rewardActive, setRewardActive] = useState(false);
+  const rewardPosRef = useRef({ x: GAME_WIDTH / 2, y: GAME_HEIGHT * 0.35 });
+  const nextRewardScoreRef = useRef(REWARD_FIRST_SCORE);
 
   const ensureAudioContext = useCallback(() => {
     if (audioCtxRef.current) return audioCtxRef.current;
@@ -564,6 +594,18 @@ const useGameLogic = () => {
       });
       ctx.restore();
 
+      if (rewardActive) {
+        const { x: rx, y: ry } = rewardPosRef.current;
+        drawStar(ctx, {
+          x: rx,
+          y: ry,
+          radius: REWARD_SIZE / 2,
+          rotation: now / 400,
+          fill: '#ffd166',
+          glow: 'rgba(255, 209, 102, 0.5)'
+        });
+      }
+
       const { width: shapeWidth, height: shapeHeight } = getShapeSize();
       const rectY = overrideY !== undefined ? overrideY : shapeYRef.current;
       ctx.save();
@@ -605,7 +647,7 @@ const useGameLogic = () => {
         ctx.restore();
       }
     },
-    [getShapeSize, perfectActive]
+    [getShapeSize, perfectActive, rewardActive]
   );
 
   const triggerPerfect = useCallback(() => {
@@ -641,6 +683,31 @@ const useGameLogic = () => {
     driftModeRef.current = 'sine';
     driftPhaseRef.current = Math.random() * Math.PI * 2;
   }, []);
+
+  const spawnReward = useCallback(() => {
+    const margin = 12 + REWARD_SIZE / 2;
+    const usable = GAME_WIDTH - margin * 2;
+    const x = margin + Math.random() * usable;
+    const y = Math.max(140, wallYRef.current - 220);
+    rewardPosRef.current = { x, y };
+    setRewardActive(true);
+  }, []);
+
+  const collectReward = useCallback(() => {
+    if (!rewardActive) return;
+    const { x, y } = rewardPosRef.current;
+    setRewardActive(false);
+    spawnParticles(x, y, '#ffd166', 40);
+    const slowed = Math.max(INITIAL_SPEED * 0.7, speedRef.current * REWARD_SPEED_SCALE);
+    speedRef.current = slowed;
+    setSpeed(slowed);
+    const widened = clamp(gapWidthRef.current + REWARD_GAP_BONUS, MIN_GAP, INITIAL_GAP);
+    gapWidthRef.current = widened;
+    setGapWidth(widened);
+    const newGapX = clamp(gapXRef.current, 0, GAME_WIDTH - widened);
+    gapXRef.current = newGapX;
+    setGapX(newGapX);
+  }, [rewardActive, spawnParticles]);
 
   const randomGapX = useCallback(
     (width) => {
@@ -702,6 +769,7 @@ const useGameLogic = () => {
         shakeRef.current = 12;
         spawnParticles(shapeXRef.current + shapeWidth / 2, wallYRef.current - WALL_HEIGHT, '#4a5568', 28, 'shard');
         setTimeToDrop(null);
+        setRewardActive(false);
         runningRef.current = false;
         setGameOver(true);
         setGameRunning(false);
@@ -713,6 +781,10 @@ const useGameLogic = () => {
       scoreRef.current = nextScore;
       setScore(nextScore);
       setHighScoreIfNeeded(nextScore);
+      if (nextScore >= nextRewardScoreRef.current) {
+        spawnReward();
+        nextRewardScoreRef.current += REWARD_INTERVAL;
+      }
 
       const leftover = currentGapWidth - shapeWidth;
       if (leftover <= PERFECT_TOLERANCE) {
@@ -739,7 +811,7 @@ const useGameLogic = () => {
 
       spawnShape(true);
     },
-    [pickDriftMode, playChime, playFail, randomGapX, setHighScoreIfNeeded, spawnParticles, spawnShape, triggerPerfect, vibrate]
+    [pickDriftMode, playChime, playFail, randomGapX, setHighScoreIfNeeded, spawnParticles, spawnReward, spawnShape, triggerPerfect, vibrate]
   );
 
   const startGame = useCallback(() => {
@@ -751,6 +823,8 @@ const useGameLogic = () => {
     particlesRef.current = [];
     trailRef.current = [];
     shakeRef.current = 0;
+    setRewardActive(false);
+    nextRewardScoreRef.current = REWARD_FIRST_SCORE;
     scoreRef.current = 0;
     setScore(0);
     setGameOver(false);
@@ -820,6 +894,16 @@ const useGameLogic = () => {
       const gapPos = clamp(gapXRef.current + driftOffset, 0, GAME_WIDTH - gapWidthRef.current);
       activeGapXRef.current = gapPos;
 
+      if (rewardActive) {
+        const r = rewardPosRef.current;
+        const half = REWARD_SIZE / 2;
+        const sx = shapeXRef.current;
+        const sy = shapeYRef.current;
+        if (sx < r.x + half && sx + shapeWidth > r.x - half && sy < r.y + half && sy + shapeHeight > r.y - half) {
+          collectReward();
+        }
+      }
+
       trailRef.current.unshift({
         x: shapeXRef.current,
         y: shapeYRef.current,
@@ -861,7 +945,7 @@ const useGameLogic = () => {
 
     rafRef.current = requestAnimationFrame(step);
     return () => rafRef.current && cancelAnimationFrame(rafRef.current);
-  }, [drawFrame, gameRunning, getShapeSize, handleLanding, paused]);
+  }, [collectReward, drawFrame, gameRunning, getShapeSize, handleLanding, paused, rewardActive]);
 
   useEffect(() => {
     runningRef.current = gameRunning;

@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import useGameLogic from './useGameLogic';
-import './Game.css';
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import useGameLogic from "./useGameLogic";
+import "./Game.css";
 
 const Game = () => {
   const {
@@ -16,167 +16,209 @@ const Game = () => {
     score,
     highScore,
     perfectActive,
-    timeToDrop
+    timeToDrop,
   } = useGameLogic();
 
   const [isMobile, setIsMobile] = useState(false);
-  const [oneHanded, setOneHanded] = useState(() => localStorage.getItem('pf-one-hand') === '1');
-  const [tutorialSeen, setTutorialSeen] = useState(() => localStorage.getItem('pf-seen-tutorial') === '1');
 
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 720px)');
+    const mq = window.matchMedia("(max-width: 920px)");
     const handler = () => setIsMobile(mq.matches);
     handler();
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
   }, []);
 
   const handleStart = useCallback(() => {
-    if (!tutorialSeen) {
-      localStorage.setItem('pf-seen-tutorial', '1');
-      setTutorialSeen(true);
-    }
     startGame();
-  }, [startGame, tutorialSeen]);
+  }, [startGame]);
 
   useEffect(() => {
     const handleKey = (event) => {
-      if (event.code === 'ArrowLeft' || event.code === 'KeyA') {
+      if (event.code === "ArrowLeft" || event.code === "KeyA") {
         event.preventDefault();
         rotateLeft();
       }
-      if (event.code === 'ArrowRight' || event.code === 'KeyD' || event.code === 'Space' || event.code === 'ArrowUp') {
+      if (
+        event.code === "ArrowRight" ||
+        event.code === "KeyD" ||
+        event.code === "Space" ||
+        event.code === "ArrowUp"
+      ) {
         event.preventDefault();
         rotateRight();
       }
-      if (event.code === 'KeyP') {
+      if (event.code === "KeyP") {
         event.preventDefault();
         togglePause();
       }
-      if (event.code === 'Enter' && !gameRunning) {
+      if (event.code === "Enter" && !gameRunning) {
+        event.preventDefault();
         handleStart();
       }
     };
 
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
   }, [gameRunning, handleStart, rotateLeft, rotateRight, togglePause]);
 
-  const primaryLabel = gameRunning ? 'Restart' : gameOver ? 'Restart' : 'Start';
-  const pauseLabel = paused ? 'Resume' : 'Pause';
+  const primaryLabel = useMemo(() => {
+    if (gameOver) return "Restart";
+    return gameRunning ? "Restart" : "Start";
+  }, [gameOver, gameRunning]);
+
+  const pauseLabel = paused ? "Resume" : "Pause";
+
+  const statusText = gameRunning ? (paused ? "Paused" : "Running") : "Ready";
 
   return (
-    <section className={`game-card ${isMobile ? 'mobile-card' : ''} ${oneHanded ? 'one-hand' : ''}`}>
-      <div className="game-meta">
-        <div className={`status-pill ${gameRunning ? 'status-live' : 'status-idle'}`}>
-          {gameRunning ? (paused ? 'Paused' : 'Running') : 'Ready'}
-        </div>
-        <div className="score-stack">
-          <span className="label">Score</span>
-          <span className="value">{score}</span>
-        </div>
-        <div className="score-stack">
-          <span className="label">Best</span>
-          <span className="value">{highScore}</span>
-        </div>
-        <div className="score-stack eta">
-          <span className="label">Drop ETA</span>
-          <span className="value">{timeToDrop != null ? `${timeToDrop}s` : '--'}</span>
-        </div>
-        <button
-          className="pill toggle"
-          onClick={() => {
-            const next = !oneHanded;
-            setOneHanded(next);
-            localStorage.setItem('pf-one-hand', next ? '1' : '0');
-          }}
-        >
-          {oneHanded ? 'One-hand: ON' : 'One-hand: OFF'}
-        </button>
-      </div>
-
-      <div className="game-shell">
-        <div className="game-area">
-          <canvas ref={canvasRef} className="game-canvas" />
-
-          <div className="floating-score">Score {score}</div>
-          {perfectActive && <div className="perfect-chip">Solar flare!</div>}
-
-          {!gameRunning && !gameOver && (
-            <div className="game-overlay">
-              <div className="overlay-inner">
-                <p className="eyebrow">Timing-based casual</p>
-                <h3>Rotate to slip through</h3>
-                <p className="overlay-copy">
-                  {isMobile
-                    ? 'Mobile: tap Rotate Left/Right to roll toward the gap. Shapes cycle circle -> square -> rectangle -> triangle. Gap drifts and shrinks each score.'
-                    : 'Desktop: roll with ArrowLeft/A (left) or ArrowRight/D/Space (right). Shapes cycle circle -> square -> rectangle -> triangle. Gap drifts and shrinks each score.'}
-                </p>
-                {!tutorialSeen && (
-                  <div className="micro-tutorial">
-                    <span>🎯 Align with the gap</span>
-                    <span>💫 Rotate to roll sideways</span>
-                    <span>✨ Perfect fit triggers a ribbon</span>
-                  </div>
-                )}
-                <button className="primary-btn" onClick={handleStart}>
-                  Start
-                </button>
-              </div>
+    <section className={`game-root ${isMobile ? "is-mobile" : "is-desktop"}`}>
+      <div className="game-frame">
+        {/* LEFT: Brand rail (desktop only) */}
+        <aside className="side-rail left-rail" aria-label="Brand">
+          <div className="brand-card">
+            <div className="brand-mark">PF</div>
+            <div className="brand-vertical">
+              <div className="brand-title">Perfect Fit</div>
+              <div className="brand-subtitle">Rotate. Align. Glide through the gap.</div>
             </div>
-          )}
+          </div>
 
-          {paused && !gameOver && (
-            <div className="game-overlay subtle">
-              <div className="overlay-inner">
-                <h3>Paused</h3>
-                <p className="overlay-copy">Take a breather, the shape will hold.</p>
-                <button className="primary-btn ghost" onClick={togglePause}>
+          <div className="kbd-card">
+            <div className="kbd-title">Keys</div>
+            <div className="kbd-row">
+              <span className="kbd-pill">A / ←</span>
+              <span className="kbd-pill">D / → / Space</span>
+            </div>
+            <div className="kbd-row">
+              <span className="kbd-pill">P</span>
+              <span className="kbd-hint">Pause/Resume</span>
+            </div>
+            <div className="kbd-row">
+              <span className="kbd-pill">Enter</span>
+              <span className="kbd-hint">Start</span>
+            </div>
+          </div>
+        </aside>
+
+        {/* CENTER: Game arena */}
+        <div className="arena-wrap">
+          {/* MOBILE HUD (top overlay) */}
+          {isMobile && (
+            <div className="mobile-hud" aria-label="Game HUD">
+              <div className="hud-left">
+                <div className="hud-chip">
+                  <span className="hud-label">Score</span>
+                  <span className="hud-value">{score}</span>
+                </div>
+                <div className="hud-chip">
+                  <span className="hud-label">Best</span>
+                  <span className="hud-value">{highScore}</span>
+                </div>
+              </div>
+
+              <div className="hud-right">
+                <button
+                  className="hud-btn"
+                  onClick={togglePause}
+                  disabled={!gameRunning || gameOver}
+                >
                   {pauseLabel}
                 </button>
               </div>
             </div>
           )}
 
-          {gameOver && (
-            <div className="game-overlay gameover">
-              <div className="overlay-inner">
-                <p className="eyebrow">Game Over</p>
-                <h3>Score {score}</h3>
-                <p className="overlay-copy">Best {highScore}</p>
-                <div className="overlay-actions">
-                  <button className="primary-btn" onClick={restartGame}>
-                    Restart
+          <div className="game-area arena-tall">
+            <canvas ref={canvasRef} className="game-canvas" />
+
+            {perfectActive && <div className="perfect-chip">Solar flare!</div>}
+
+            {!gameRunning && !gameOver && (
+              <div className="game-overlay subtle">
+                <div className="overlay-inner">
+                  <button className="primary-btn" onClick={handleStart}>
+                    Start
                   </button>
                 </div>
               </div>
+            )}
+
+            {paused && !gameOver && (
+              <div className="game-overlay subtle">
+                <div className="overlay-inner">
+                  <h3>Paused</h3>
+                  <div className="overlay-actions">
+                    <button className="primary-btn ghost" onClick={restartGame}>
+                      Restart
+                    </button>
+                    <button className="primary-btn" onClick={togglePause}>
+                      {pauseLabel}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {gameOver && (
+              <div className="game-overlay gameover">
+                <div className="overlay-inner">
+                  <p className="eyebrow">Game Over</p>
+                  <h3>Score {score}</h3>
+                  <p className="overlay-copy">Best {highScore}</p>
+                  <div className="overlay-actions">
+                    <button className="primary-btn" onClick={restartGame}>
+                      Restart
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT: Stats + controls rail (desktop only) */}
+        <aside className="side-rail right-rail" aria-label="Controls and stats">
+          <div className="stats-card">
+            <div className="stat-row">
+              <span className="stat-label">Score</span>
+              <span className="stat-value">{score}</span>
             </div>
-          )}
-        </div>
+            <div className="stat-row">
+              <span className="stat-label">Best</span>
+              <span className="stat-value">{highScore}</span>
+            </div>
+            <div className="stat-row">
+              <span className="stat-label">Drop ETA</span>
+              <span className="stat-value mono">{timeToDrop != null ? `${timeToDrop}s` : "--"}</span>
+            </div>
 
-        <div className="controls-row">
-          <button className="primary-btn" onClick={gameOver ? restartGame : handleStart}>
-            {primaryLabel}
-          </button>
-          <button className="secondary-btn" onClick={togglePause} disabled={!gameRunning || gameOver}>
-            {pauseLabel}
-          </button>
-        </div>
+            <div className={`status-pill ${gameRunning ? "status-live" : "status-idle"}`}>
+              {statusText}
+            </div>
+          </div>
 
-        <div className={`rotate-row ${oneHanded ? 'stacked' : ''}`}>
-          <button className="rotate-btn ghost" onClick={rotateLeft} disabled={!gameRunning || paused || gameOver}>
-            {'Rotate Left (<- / A)'}
-          </button>
-          <button className="rotate-btn" onClick={rotateRight} disabled={!gameRunning || paused || gameOver}>
-            {'Rotate Right (-> / D / Space)'}
-          </button>
-        </div>
+          <div className="rail-controls">
+            <button
+              className="primary-btn"
+              onClick={gameOver ? restartGame : handleStart}
+            >
+              {primaryLabel}
+            </button>
 
-        <div className="hint-row">
-          <span className="pill muted">{'⌨️ <- / A rolls left · -> / D / Space rolls right · P pause'}</span>
-          <span className="pill">📱 Tap Rotate Left/Right · One-hand stacks controls</span>
-          <span className="pill">🎁 Perfect = ribbon + particles</span>
-        </div>
+            <button
+              className="secondary-btn"
+              onClick={togglePause}
+              disabled={!gameRunning || gameOver}
+            >
+              {pauseLabel}
+            </button>
+          </div>
+
+          <div className="rail-note">
+            Tip: give yourself more time by using the extra height — that’s the whole point 😄
+          </div>
+        </aside>
       </div>
     </section>
   );
