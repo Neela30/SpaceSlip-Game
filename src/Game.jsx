@@ -100,7 +100,7 @@ const Game = () => {
           <canvas ref={canvasRef} className="game-canvas" />
 
           <div className="floating-score">Score {score}</div>
-          {perfectActive && <div className="perfect-chip">Perfect!</div>}
+          {perfectActive && <div className="perfect-chip">Solar flare!</div>}
 
           {!gameRunning && !gameOver && (
             <div className="game-overlay">

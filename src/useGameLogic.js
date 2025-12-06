@@ -20,6 +20,9 @@ const ROTATION_STEP = 90;
 const TRAIL_LENGTH = 8;
 const MAX_PARTICLES = 140;
 const STAR_COUNT = 42;
+const SAT_BODY = { w: 36, h: 36 };
+const SAT_PANEL = { w: 52, h: 22 };
+const SAT_ARM = 18;
 
 const SHAPE_VARIANTS = [
   {
@@ -28,8 +31,8 @@ const SHAPE_VARIANTS = [
     long: LONG_SIDE,
     short: SHORT_SIDE,
     palette: [
-      ['#5ef0c7', '#6ae0ff'],
-      ['#7b8bff', '#5ce6ff']
+      ['#0f4b7a', '#18b7ff'],
+      ['#0e2f52', '#1cc8ff']
     ]
   },
   {
@@ -37,8 +40,8 @@ const SHAPE_VARIANTS = [
     kind: 'square',
     size: 92,
     palette: [
-      ['#ff8ad9', '#7de6ff'],
-      ['#ffcc70', '#c850c0']
+      ['#2c3f68', '#33c7ff'],
+      ['#1f2a44', '#5be0ff']
     ]
   },
   {
@@ -46,8 +49,8 @@ const SHAPE_VARIANTS = [
     kind: 'circle',
     size: 88,
     palette: [
-      ['#a3ffb0', '#4de1ff'],
-      ['#ffc3a0', '#ff5fa2']
+      ['#3a4f6f', '#9edcff'],
+      ['#2f3855', '#67b8ff']
     ]
   },
   {
@@ -55,8 +58,8 @@ const SHAPE_VARIANTS = [
     kind: 'triangle',
     size: 110,
     palette: [
-      ['#9ef5ff', '#ff8ad9'],
-      ['#c6ff8a', '#5cd7ff']
+      ['#1d2a46', '#58e4ff'],
+      ['#1b1f36', '#3ad2ff']
     ]
   }
 ];
@@ -113,9 +116,6 @@ const driftOffsetForMode = (time, amplitude, mode, phase) => {
 };
 const renderShape = (ctx, { x, y, width, height, rotation, type, colors, alpha = 1, scale = 1 }) => {
   const [c1, c2] = colors;
-  const fill = ctx.createLinearGradient(x, y, x + width, y + height);
-  fill.addColorStop(0, c1);
-  fill.addColorStop(1, c2);
   const cx = x + width / 2;
   const cy = y + height / 2;
   ctx.save();
@@ -123,32 +123,60 @@ const renderShape = (ctx, { x, y, width, height, rotation, type, colors, alpha =
   ctx.rotate((rotation * Math.PI) / 180);
   ctx.scale(scale, scale);
   ctx.globalAlpha *= alpha;
-  const baseStroke = 'rgba(255,255,255,0.2)';
-  if (type === 'triangle') {
-    const hw = width / 2;
-    const hh = height / 2;
+
+  // Satellite panels
+  const panelFill = ctx.createLinearGradient(-SAT_PANEL.w, -SAT_PANEL.h / 2, SAT_PANEL.w, SAT_PANEL.h / 2);
+  panelFill.addColorStop(0, '#0a2440');
+  panelFill.addColorStop(1, '#0d4c80');
+  const panelStroke = 'rgba(120, 210, 255, 0.35)';
+  drawRoundedRect(ctx, -SAT_PANEL.w - SAT_ARM, -SAT_PANEL.h / 2, SAT_PANEL.w, SAT_PANEL.h, 6, panelFill, panelStroke);
+  drawRoundedRect(ctx, SAT_ARM, -SAT_PANEL.h / 2, SAT_PANEL.w, SAT_PANEL.h, 6, panelFill, panelStroke);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1;
+  [-6, 0, 6].forEach((yLine) => {
     ctx.beginPath();
-    ctx.moveTo(0, -hh);
-    ctx.lineTo(hw, hh);
-    ctx.lineTo(-hw, hh);
-    ctx.closePath();
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.strokeStyle = baseStroke;
-    ctx.lineWidth = 2;
+    ctx.moveTo(-SAT_PANEL.w - SAT_ARM + 4, yLine);
+    ctx.lineTo(-SAT_ARM - 4, yLine);
     ctx.stroke();
-  } else if (type === 'circle') {
     ctx.beginPath();
-    ctx.arc(0, 0, width / 2, 0, Math.PI * 2);
-    ctx.fillStyle = fill;
-    ctx.fill();
-    ctx.strokeStyle = baseStroke;
-    ctx.lineWidth = 2;
+    ctx.moveTo(SAT_ARM + 4, yLine);
+    ctx.lineTo(SAT_PANEL.w + SAT_ARM - 4, yLine);
     ctx.stroke();
-  } else {
-    const radius = type === 'square' ? 10 : 12;
-    drawRoundedRect(ctx, -width / 2, -height / 2, width, height, radius, fill, baseStroke);
-  }
+  });
+
+  // Body
+  const bodyFill = ctx.createLinearGradient(-SAT_BODY.w / 2, -SAT_BODY.h / 2, SAT_BODY.w / 2, SAT_BODY.h / 2);
+  bodyFill.addColorStop(0, c1);
+  bodyFill.addColorStop(1, c2);
+  drawRoundedRect(ctx, -SAT_BODY.w / 2, -SAT_BODY.h / 2, SAT_BODY.w, SAT_BODY.h, 8, bodyFill, 'rgba(255,255,255,0.25)');
+
+  // Antenna dish
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(200,230,255,0.8)';
+  ctx.lineWidth = 2;
+  ctx.arc(0, -SAT_BODY.h / 2 - 8, 10, Math.PI * 0.2, Math.PI * 0.8);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0, -SAT_BODY.h / 2);
+  ctx.lineTo(0, -SAT_BODY.h / 2 - 8);
+  ctx.stroke();
+
+  // Accent lights
+  ctx.fillStyle = 'rgba(120,230,255,0.9)';
+  ctx.fillRect(-4, -4, 2, 2);
+  ctx.fillRect(2, -8, 2, 2);
+  ctx.fillRect(6, 6, 2, 2);
+
+  // Thruster cone
+  ctx.fillStyle = 'rgba(255,180,120,0.9)';
+  ctx.beginPath();
+  ctx.moveTo(-4, SAT_BODY.h / 2);
+  ctx.lineTo(0, SAT_BODY.h / 2 + 12 + Math.sin(performance.now() / 80) * 2);
+  ctx.lineTo(4, SAT_BODY.h / 2);
+  ctx.closePath();
+  ctx.fill();
+
   ctx.restore();
 };
 
@@ -308,6 +336,13 @@ const useGameLogic = () => {
       ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
+      // Planet limb glow
+      const planet = ctx.createRadialGradient(GAME_WIDTH * 0.9, GAME_HEIGHT * 0.2, 40, GAME_WIDTH * 0.85, GAME_HEIGHT * 0.15, 260);
+      planet.addColorStop(0, 'rgba(80, 140, 255, 0.22)');
+      planet.addColorStop(1, 'rgba(10, 16, 32, 0)');
+      ctx.fillStyle = planet;
+      ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
       ctx.save();
       ctx.globalAlpha = 0.18;
       ctx.fillStyle = '#6ee7f0';
@@ -336,16 +371,28 @@ const useGameLogic = () => {
       const narrowness = clamp(1 - (gapSize - MIN_GAP) / (INITIAL_GAP - MIN_GAP), 0, 1);
       const pulse = 0.4 + Math.sin(now / 240) * 0.2 * narrowness;
       ctx.save();
-      ctx.shadowColor = `rgba(76, 216, 255, ${0.35 + 0.25 * pulse})`;
-      ctx.shadowBlur = 22 + pulse * 10;
-      ctx.fillStyle = '#102640';
+      ctx.shadowColor = `rgba(86, 206, 255, ${0.35 + 0.25 * pulse})`;
+      ctx.shadowBlur = 24 + pulse * 12;
+      ctx.fillStyle = '#0a1525';
       ctx.fillRect(0, wallTop, currentGapX, WALL_HEIGHT);
       ctx.fillRect(currentGapX + gapSize, wallTop, GAME_WIDTH - (currentGapX + gapSize), WALL_HEIGHT);
       ctx.restore();
       ctx.save();
-      ctx.fillStyle = `rgba(130, 216, 255, ${0.35 + 0.3 * narrowness})`;
+      ctx.fillStyle = `rgba(140, 226, 255, ${0.45 + 0.3 * narrowness})`;
       ctx.fillRect(0, wallTop - 2, currentGapX, 2);
       ctx.fillRect(currentGapX + gapSize, wallTop - 2, GAME_WIDTH - (currentGapX + gapSize), 2);
+      ctx.restore();
+
+      // Docking ring ticks
+      ctx.save();
+      ctx.fillStyle = 'rgba(120, 220, 255, 0.4)';
+      const tickWidth = 8;
+      const tickHeight = 3;
+      for (let i = 0; i < 4; i++) {
+        const offset = i * 18;
+        ctx.fillRect(currentGapX - tickWidth - 4, wallTop + offset, tickWidth, tickHeight);
+        ctx.fillRect(currentGapX + gapSize + 4, wallTop + offset + tickHeight, tickWidth, tickHeight);
+      }
       ctx.restore();
 
       ctx.save();
@@ -390,9 +437,17 @@ const useGameLogic = () => {
         if (lifeRatio <= 0) return;
         ctx.globalAlpha = lifeRatio * 0.8;
         ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size * lifeRatio, 0, Math.PI * 2);
-        ctx.fill();
+        if (p.kind === 'shard') {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.rot || 0);
+          ctx.fillRect(-p.size * 0.6, -p.size * 0.3, p.size * 1.2, p.size * 0.6);
+          ctx.restore();
+        } else {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size * lifeRatio, 0, Math.PI * 2);
+          ctx.fill();
+        }
       });
       ctx.restore();
 
@@ -420,9 +475,9 @@ const useGameLogic = () => {
         ctx.save();
         const ribbonY = GAME_HEIGHT * 0.28;
         const gradient = ctx.createLinearGradient(0, ribbonY, GAME_WIDTH, ribbonY + 40);
-        gradient.addColorStop(0, 'rgba(255, 134, 220, 0.7)');
-        gradient.addColorStop(0.5, 'rgba(109, 243, 201, 0.95)');
-        gradient.addColorStop(1, 'rgba(93, 210, 255, 0.7)');
+        gradient.addColorStop(0, 'rgba(255, 184, 94, 0.75)');
+        gradient.addColorStop(0.5, 'rgba(255, 220, 140, 0.95)');
+        gradient.addColorStop(1, 'rgba(255, 172, 86, 0.75)');
         ctx.strokeStyle = gradient;
         ctx.lineWidth = 10;
         ctx.beginPath();
@@ -430,10 +485,10 @@ const useGameLogic = () => {
         ctx.quadraticCurveTo(GAME_WIDTH / 2, ribbonY + 34 + Math.cos(now / 200) * 8, GAME_WIDTH + 40, ribbonY + Math.sin(now / 180) * 6);
         ctx.stroke();
         ctx.font = '700 24px "Space Grotesk", system-ui';
-        ctx.fillStyle = '#041019';
+        ctx.fillStyle = '#2c1400';
         ctx.shadowColor = 'rgba(0,0,0,0.35)';
         ctx.shadowBlur = 10;
-        ctx.fillText('Perfect!', GAME_WIDTH / 2 - 46, ribbonY + 12);
+        ctx.fillText('Solar flare!', GAME_WIDTH / 2 - 58, ribbonY + 12);
         ctx.restore();
       }
     },
@@ -450,7 +505,7 @@ const useGameLogic = () => {
     squashRef.current = 1.06;
   }, []);
 
-  const spawnParticles = useCallback((x, y, tint = '#7dd8ff', count = 26) => {
+  const spawnParticles = useCallback((x, y, tint = '#7dd8ff', count = 26, kind = 'spark') => {
     const pool = particlesRef.current;
     for (let i = 0; i < count; i++) {
       if (pool.length >= MAX_PARTICLES) break;
@@ -462,7 +517,9 @@ const useGameLogic = () => {
         size: 2.2 + Math.random() * 2.6,
         life: 0,
         maxLife: 380 + Math.random() * 240,
-        color: tint
+        color: tint,
+        kind,
+        rot: Math.random() * Math.PI
       });
     }
   }, []);
@@ -532,6 +589,7 @@ const useGameLogic = () => {
         playFail();
         vibrate(140);
         shakeRef.current = 12;
+        spawnParticles(shapeXRef.current + shapeWidth / 2, wallYRef.current - WALL_HEIGHT, '#4a5568', 28, 'shard');
         setTimeToDrop(null);
         runningRef.current = false;
         setGameOver(true);
@@ -548,10 +606,10 @@ const useGameLogic = () => {
       const leftover = currentGapWidth - shapeWidth;
       if (leftover <= PERFECT_TOLERANCE) {
         triggerPerfect();
-        spawnParticles(shapeXRef.current + shapeWidth / 2, wallYRef.current - WALL_HEIGHT * 1.6, '#ff8ad9', 40);
+        spawnParticles(shapeXRef.current + shapeWidth / 2, wallYRef.current - WALL_HEIGHT * 1.6, '#ffb347', 40);
       }
       playChime();
-      spawnParticles(shapeXRef.current + shapeWidth / 2, wallYRef.current - WALL_HEIGHT, '#7dd8ff', 24);
+      spawnParticles(shapeXRef.current + shapeWidth / 2, wallYRef.current - WALL_HEIGHT, '#6fd8ff', 24);
       squashRef.current = 0.9;
 
       const nextGapWidth = Math.max(MIN_GAP, currentGapWidth - GAP_SHRINK);
