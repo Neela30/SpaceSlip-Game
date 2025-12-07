@@ -1,4 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  createAlienState,
+  drawAlienShots,
+  drawAliens,
+  maybeActivateAliens,
+  resetAliensState,
+  spawnAlienWave,
+  updateAlienBullets,
+  updateAliensForFrame
+} from './game/aliens';
 
 const GAME_WIDTH = 360;
 const GAME_HEIGHT = 640;
@@ -30,18 +40,6 @@ const REWARD_SPEED_SCALE = 0.72;
 const SAT_BODY = { w: 36, h: 36 };
 const SAT_PANEL = { w: 52, h: 22 };
 const SAT_ARM = 18;
-
-const ALIEN_START_SCORE = 20;
-const ALIEN_WIDTH = 28;
-const ALIEN_HEIGHT = 22;
-const ALIEN_WALK_SPEED = 0.2;
-const ALIEN_GROUND_OFFSET = 14;
-const ALIEN_BULLET_SPEED = 3.6;
-const ALIEN_MIN_COOLDOWN = 900;
-const ALIEN_MAX_COOLDOWN = 1900;
-const ALIEN_BULLET_RADIUS = 3.5;
-const ALIEN_COUNT = 2;
-const ALIEN_FIRE_DELAY = 3000;
 
 const SHAPE_VARIANTS = [
   {
@@ -93,8 +91,6 @@ const SHAPE_ORDER = ['circle', 'square', 'rectangle', 'triangle'];
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const lerp = (a, b, t) => a + (b - a) * t;
-
-const randRange = (min, max) => min + Math.random() * (max - min);
 
 const drawRoundedRect = (ctx, x, y, width, height, radius, fillStyle, strokeStyle) => {
   ctx.beginPath();
@@ -314,72 +310,6 @@ const renderShape = (ctx, { x, y, width, height, rotation, type, colors, alpha =
   ctx.restore();
 };
 
-const drawAlien = (ctx, alien, now) => {
-  ctx.save();
-  ctx.translate(alien.x, alien.y);
-  const sway = Math.sin(now / 420 + alien.x * 0.03) * 1.2;
-  const stride = Math.sin(now / 260 + alien.x * 0.08) * 2.6;
-  ctx.translate(0, sway);
-
-  const facing = alien.dir >= 0 ? 1 : -1;
-
-  // legs
-  ctx.fillStyle = '#2e1b4d';
-  ctx.save();
-  ctx.translate(ALIEN_WIDTH / 2, ALIEN_HEIGHT - 1.5);
-  ctx.rotate((stride * Math.PI) / 360);
-  ctx.fillRect(-ALIEN_WIDTH / 2 + 1, -1, 6, 2);
-  ctx.rotate((-stride * 2 * Math.PI) / 360);
-  ctx.fillRect(ALIEN_WIDTH / 2 - 7, -1, 6, 2);
-  ctx.restore();
-
-  // torso
-  const torsoFill = ctx.createLinearGradient(0, 0, 0, ALIEN_HEIGHT);
-  torsoFill.addColorStop(0, '#8a5bff');
-  torsoFill.addColorStop(1, '#44c0ff');
-  drawRoundedRect(ctx, 2, 6, ALIEN_WIDTH - 4, ALIEN_HEIGHT - 6, 7, torsoFill, 'rgba(255,255,255,0.18)');
-
-  // head
-  ctx.beginPath();
-  ctx.arc(ALIEN_WIDTH / 2, 4, 6, 0, Math.PI * 2);
-  ctx.fillStyle = '#f5f3ff';
-  ctx.fill();
-  ctx.fillStyle = '#1b0f32';
-  ctx.fillRect(ALIEN_WIDTH / 2 - 5, 2, 4, 3);
-  ctx.fillRect(ALIEN_WIDTH / 2 + 1, 2, 4, 3);
-
-  // arms/hands
-  ctx.save();
-  ctx.translate(ALIEN_WIDTH / 2, ALIEN_HEIGHT / 2 + 2);
-  ctx.scale(facing, 1);
-  ctx.fillStyle = '#51ffe6';
-  ctx.fillRect(5, -2 + stride * 0.1, 10, 4);
-  ctx.fillStyle = '#2ae6be';
-  ctx.fillRect(14, -3 + stride * 0.1, 5, 6);
-  ctx.restore();
-
-  // belt + indicator
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.fillRect(4, ALIEN_HEIGHT - 8, ALIEN_WIDTH - 8, 3);
-  ctx.fillStyle = '#ffcf70';
-  ctx.fillRect(ALIEN_WIDTH / 2 - 3, ALIEN_HEIGHT - 9, 6, 2);
-
-  ctx.restore();
-};
-
-const drawAlienBullet = (ctx, bullet) => {
-  ctx.save();
-  ctx.translate(bullet.x, bullet.y);
-  const glow = ctx.createRadialGradient(0, 0, 0.5, 0, 0, ALIEN_BULLET_RADIUS * 2.2);
-  glow.addColorStop(0, 'rgba(255, 237, 150, 0.95)');
-  glow.addColorStop(1, 'rgba(255, 140, 64, 0.15)');
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(0, 0, ALIEN_BULLET_RADIUS, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-};
-
 const useGameLogic = () => {
   const canvasRef = useRef(null);
   const [shapeX, setShapeX] = useState((GAME_WIDTH - LONG_SIDE) / 2);
@@ -427,11 +357,8 @@ const useGameLogic = () => {
   const [rewardActive, setRewardActive] = useState(false);
   const rewardPosRef = useRef({ x: GAME_WIDTH / 2, y: GAME_HEIGHT * 0.35 });
   const nextRewardScoreRef = useRef(REWARD_FIRST_SCORE);
-  const aliensRef = useRef([]);
-  const bulletsRef = useRef([]);
-  const alienActiveRef = useRef(false);
-  const shapeDamageRef = useRef(0);
-  const totalHitsRef = useRef(0);
+  const alienStateRef = useRef(createAlienState());
+  const { shapeDamageRef, totalHitsRef } = alienStateRef.current;
 
   const ensureAudioContext = useCallback(() => {
     if (audioCtxRef.current) return audioCtxRef.current;
@@ -633,11 +560,7 @@ const useGameLogic = () => {
       ctx.stroke();
       ctx.restore();
 
-      if (alienActiveRef.current) {
-        ctx.save();
-        aliensRef.current.forEach((alien) => drawAlien(ctx, alien, now));
-        ctx.restore();
-      }
+      drawAliens(ctx, alienStateRef.current, now);
 
       // Trail
       ctx.save();
@@ -719,11 +642,7 @@ const useGameLogic = () => {
       });
       ctx.restore();
 
-      if (alienActiveRef.current) {
-        ctx.save();
-        bulletsRef.current.forEach((bullet) => drawAlienBullet(ctx, bullet));
-        ctx.restore();
-      }
+      drawAlienShots(ctx, alienStateRef.current);
 
       if (perfectActive) {
         ctx.save();
@@ -808,51 +727,6 @@ const useGameLogic = () => {
     setGapX(newGapX);
   }, [rewardActive, spawnParticles]);
 
-  const resetAliens = useCallback(() => {
-    aliensRef.current = [];
-    bulletsRef.current = [];
-    alienActiveRef.current = false;
-  }, []);
-
-  const spawnAlienWave = useCallback(() => {
-    const wallTop = wallYRef.current;
-    const yBase = Math.max(0, wallTop - ALIEN_HEIGHT - 4); // stand on the bar
-    const now = performance.now();
-    const gapStart = clamp(gapXRef.current, 0, GAME_WIDTH - gapWidthRef.current);
-    const gapEnd = clamp(gapStart + gapWidthRef.current, gapStart, GAME_WIDTH);
-    const safeMargin = 12;
-    const leftLane = {
-      min: 6,
-      max: Math.max(8, gapStart - safeMargin - ALIEN_WIDTH)
-    };
-    const rightLane = {
-      min: Math.min(GAME_WIDTH - ALIEN_WIDTH - 6, gapEnd + safeMargin),
-      max: GAME_WIDTH - ALIEN_WIDTH - 6
-    };
-    const lanes = [leftLane, rightLane].slice(0, ALIEN_COUNT).map((lane, idx) => {
-      const usable = Math.max(0, lane.max - lane.min);
-      const pos = usable > 2 ? lane.min + Math.random() * usable : lane.min;
-      return {
-        x: clamp(pos, lane.min, lane.max),
-        y: yBase,
-        dir: Math.random() > 0.5 ? 1 : -1,
-        speed: ALIEN_WALK_SPEED + Math.random() * 0.12,
-        cooldown: randRange(ALIEN_MIN_COOLDOWN, ALIEN_MAX_COOLDOWN),
-        lastShot: now + ALIEN_FIRE_DELAY + idx * 220,
-        bounds: lane,
-        laneIndex: idx
-      };
-    });
-    aliensRef.current = lanes;
-    alienActiveRef.current = true;
-  }, []);
-
-  const maybeActivateAliens = useCallback(() => {
-    if (!alienActiveRef.current && scoreRef.current >= ALIEN_START_SCORE) {
-      spawnAlienWave();
-    }
-  }, [spawnAlienWave]);
-
   const randomGapX = useCallback(
     (width) => {
       const margin = 6;
@@ -898,75 +772,6 @@ const useGameLogic = () => {
       setPaused(false);
     },
     [playFail, spawnParticles, vibrate]
-  );
-
-  const updateAliens = useCallback((delta, now) => {
-    if (!alienActiveRef.current) return;
-    const gapStart = clamp(activeGapXRef.current, 0, GAME_WIDTH - gapWidthRef.current);
-    const gapEnd = clamp(gapStart + gapWidthRef.current, gapStart, GAME_WIDTH);
-    const safeMargin = 12;
-    const leftBounds = {
-      min: 6,
-      max: Math.max(8, gapStart - safeMargin - ALIEN_WIDTH)
-    };
-    const rightBounds = {
-      min: Math.min(GAME_WIDTH - ALIEN_WIDTH - 6, gapEnd + safeMargin),
-      max: GAME_WIDTH - ALIEN_WIDTH - 6
-    };
-    aliensRef.current.forEach((alien) => {
-      alien.x += alien.dir * alien.speed * delta;
-      const laneBounds = alien.laneIndex === 1 ? rightBounds : leftBounds;
-      const min = laneBounds.min;
-      const max = Math.max(min, laneBounds.max);
-      if (alien.x <= min) {
-        alien.x = min;
-        alien.dir = 1;
-      } else if (alien.x >= max) {
-        alien.x = max;
-        alien.dir = -1;
-      }
-      const readyToShoot = now - alien.lastShot >= alien.cooldown;
-      if (readyToShoot && bulletsRef.current.length < 14) {
-        bulletsRef.current.push({
-          x: alien.x + ALIEN_WIDTH / 2,
-          y: alien.y - 6,
-          vy: -ALIEN_BULLET_SPEED - Math.random() * 1.2
-        });
-        alien.lastShot = now;
-        alien.cooldown = randRange(ALIEN_MIN_COOLDOWN, ALIEN_MAX_COOLDOWN);
-      }
-    });
-  }, []);
-
-  const updateBullets = useCallback(
-    (delta, shapeBounds) => {
-      if (!alienActiveRef.current || bulletsRef.current.length === 0) return false;
-      let lethal = false;
-      let hitRegistered = false;
-      const sx = shapeBounds.x - ALIEN_BULLET_RADIUS;
-      const sy = shapeBounds.y - ALIEN_BULLET_RADIUS;
-      const sw = shapeBounds.width + ALIEN_BULLET_RADIUS * 2;
-      const sh = shapeBounds.height + ALIEN_BULLET_RADIUS * 2;
-      bulletsRef.current = bulletsRef.current.filter((b) => {
-        b.y += b.vy * delta;
-        if (b.y < -20) return false;
-        if (b.x >= sx && b.x <= sx + sw && b.y >= sy && b.y <= sy + sh) {
-          hitRegistered = true;
-          return false;
-        }
-        return b.y <= GAME_HEIGHT + 30;
-      });
-      if (hitRegistered) {
-        shapeDamageRef.current += 1;
-        totalHitsRef.current += 1;
-        if (totalHitsRef.current > 3) {
-          lethal = true;
-        }
-        handleAlienHit(shapeBounds, lethal);
-      }
-      return lethal;
-    },
-    [handleAlienHit]
   );
 
   const spawnShape = useCallback(
@@ -1015,7 +820,14 @@ const useGameLogic = () => {
       scoreRef.current = nextScore;
       setScore(nextScore);
       setHighScoreIfNeeded(nextScore);
-      maybeActivateAliens();
+      maybeActivateAliens(alienStateRef.current, nextScore, () =>
+        spawnAlienWave(alienStateRef.current, {
+          wallY: wallYRef.current,
+          gapX: gapXRef.current,
+          gapWidth: gapWidthRef.current,
+          gameWidth: GAME_WIDTH
+        })
+      );
       if (nextScore >= nextRewardScoreRef.current) {
         spawnReward();
         nextRewardScoreRef.current += REWARD_INTERVAL;
@@ -1046,7 +858,7 @@ const useGameLogic = () => {
 
       spawnShape(true);
     },
-    [maybeActivateAliens, pickDriftMode, playChime, playFail, randomGapX, setHighScoreIfNeeded, spawnParticles, spawnReward, spawnShape, triggerPerfect, vibrate]
+    [maybeActivateAliens, pickDriftMode, playChime, playFail, randomGapX, setHighScoreIfNeeded, spawnAlienWave, spawnParticles, spawnReward, spawnShape, triggerPerfect, vibrate]
   );
 
   const startGame = useCallback(() => {
@@ -1061,7 +873,7 @@ const useGameLogic = () => {
     setRewardActive(false);
     totalHitsRef.current = 0;
     shapeDamageRef.current = 0;
-    resetAliens();
+    resetAliensState(alienStateRef.current);
     nextRewardScoreRef.current = REWARD_FIRST_SCORE;
     scoreRef.current = 0;
     setScore(0);
@@ -1082,7 +894,7 @@ const useGameLogic = () => {
     spawnShape(true);
     runningRef.current = true;
     setGameRunning(true);
-  }, [pickDriftMode, randomGapX, resetAliens, spawnShape]);
+  }, [pickDriftMode, randomGapX, resetAliensState, spawnShape]);
 
   const restartGame = useCallback(() => {
     startGame();
@@ -1157,9 +969,21 @@ const useGameLogic = () => {
         trailRef.current.length = TRAIL_LENGTH;
       }
 
-      updateAliens(delta, time);
-      const hitByAlien = updateBullets(delta, shapeBounds);
-      if (hitByAlien) {
+      updateAliensForFrame(alienStateRef.current, {
+        delta,
+        now: time,
+        gapX: gapPos,
+        gapWidth: gapWidthRef.current,
+        gameWidth: GAME_WIDTH
+      });
+
+      const { lethal: alienLethal } = updateAlienBullets(alienStateRef.current, {
+        delta,
+        shapeBounds,
+        gameHeight: GAME_HEIGHT,
+        onHit: (lethalHit, bounds) => handleAlienHit(bounds, lethalHit)
+      });
+      if (alienLethal) {
         drawFrame(gapPos, shapeBounds.y, time, delta);
         return;
       }
@@ -1192,7 +1016,7 @@ const useGameLogic = () => {
 
     rafRef.current = requestAnimationFrame(step);
     return () => rafRef.current && cancelAnimationFrame(rafRef.current);
-  }, [collectReward, drawFrame, gameRunning, getShapeSize, handleLanding, paused, rewardActive, updateAliens, updateBullets]);
+  }, [collectReward, drawFrame, gameRunning, getShapeSize, handleLanding, paused, rewardActive, updateAlienBullets, updateAliensForFrame]);
 
   useEffect(() => {
     runningRef.current = gameRunning;
