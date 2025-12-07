@@ -113,6 +113,11 @@ const useGameLogic = () => {
   const alienStateRef = useRef(createAlienState());
   const { shapeDamageRef, totalHitsRef } = alienStateRef.current;
 
+  // ✅ NEW: real horizontal velocity tracking for aiming
+  const lastTargetXRef = useRef(null);
+  const lastAimTimeRef = useRef(null);
+  const targetVXRef = useRef(0);
+
   const sfx = useMemo(() => createSfx(audioCtxRef), []);
 
   const getShapeSize = useCallback(
@@ -433,9 +438,7 @@ const useGameLogic = () => {
 
   const spawnShape = useCallback(
     (randomizeType = true) => {
-      const variant = randomizeType
-        ? pickShapeVariant()
-        : SHAPE_LOOKUP[shapeTypeRef.current] || SHAPE_VARIANTS[0];
+      const variant = randomizeType ? pickShapeVariant() : SHAPE_LOOKUP[shapeTypeRef.current] || SHAPE_VARIANTS[0];
 
       const colors = variant.palette[Math.floor(Math.random() * variant.palette.length)];
       shapeColorsRef.current = colors;
@@ -466,20 +469,13 @@ const useGameLogic = () => {
 
   const handleLanding = useCallback(
     ({ gapPos, currentGapWidth, shapeWidth, shapeHeight }) => {
-      const hitWall =
-        shapeXRef.current < gapPos || shapeXRef.current + shapeWidth > gapPos + currentGapWidth;
+      const hitWall = shapeXRef.current < gapPos || shapeXRef.current + shapeWidth > gapPos + currentGapWidth;
 
       if (hitWall) {
         sfx.fail();
         vibrate(140);
         shakeRef.current = 12;
-        spawnParticles(
-          shapeXRef.current + shapeWidth / 2,
-          wallYRef.current - WALL_HEIGHT,
-          '#4a5568',
-          28,
-          'shard'
-        );
+        spawnParticles(shapeXRef.current + shapeWidth / 2, wallYRef.current - WALL_HEIGHT, '#4a5568', 28, 'shard');
         setTimeToDrop(null);
         setRewardActive(false);
         runningRef.current = false;
@@ -511,12 +507,7 @@ const useGameLogic = () => {
       const leftover = currentGapWidth - shapeWidth;
       if (leftover <= PERFECT_TOLERANCE) {
         triggerPerfect();
-        spawnParticles(
-          shapeXRef.current + shapeWidth / 2,
-          wallYRef.current - WALL_HEIGHT * 1.6,
-          '#ffb347',
-          40
-        );
+        spawnParticles(shapeXRef.current + shapeWidth / 2, wallYRef.current - WALL_HEIGHT * 1.6, '#ffb347', 40);
       }
 
       sfx.chime();
@@ -539,15 +530,7 @@ const useGameLogic = () => {
       pickDriftMode();
       spawnShape(true);
     },
-    [
-      pickDriftMode,
-      randomGapX,
-      setHighScoreIfNeeded,
-      spawnParticles,
-      spawnShape,
-      sfx,
-      triggerPerfect
-    ]
+    [pickDriftMode, randomGapX, setHighScoreIfNeeded, spawnParticles, spawnShape, sfx, triggerPerfect]
   );
 
   const startGame = useCallback(() => {
@@ -563,6 +546,11 @@ const useGameLogic = () => {
 
     totalHitsRef.current = 0;
     shapeDamageRef.current = 0;
+
+    // ✅ reset aim velocity tracking on new game
+    lastTargetXRef.current = null;
+    lastAimTimeRef.current = null;
+    targetVXRef.current = 0;
 
     resetAliensState(alienStateRef.current);
     resetRewards(nextRewardScoreRef);
@@ -616,7 +604,6 @@ const useGameLogic = () => {
 
       const center = shapeXRef.current + currentWidth / 2;
 
-      // keep your roll feel, but now in 90° snaps
       const rollDistance = Math.sign(delta) * Math.max(18, Math.min(44, currentWidth * 0.45));
       const unclampedX = center - nextWidth / 2 + rollDistance;
       const clampedX = clamp(unclampedX, 0, GAME_WIDTH - nextWidth);
@@ -633,7 +620,6 @@ const useGameLogic = () => {
     [gameOver, gameRunning, getShapeSize, paused, sfx]
   );
 
-  // ✅ 90° rotation now
   const rotateLeft = useCallback(() => rotateBy(-ROTATE_STEP), [rotateBy]);
   const rotateRight = useCallback(() => rotateBy(ROTATE_STEP), [rotateBy]);
 
@@ -651,12 +637,7 @@ const useGameLogic = () => {
 
       const { width: shapeWidth, height: shapeHeight } = getShapeSize();
 
-      const driftOffset = driftOffsetForMode(
-        time,
-        driftAmplitudeRef.current,
-        driftModeRef.current,
-        driftPhaseRef.current
-      );
+      const driftOffset = driftOffsetForMode(time, driftAmplitudeRef.current, driftModeRef.current, driftPhaseRef.current);
 
       const gapPos = clamp(gapXRef.current + driftOffset, 0, GAME_WIDTH - gapWidthRef.current);
       activeGapXRef.current = gapPos;
@@ -695,8 +676,27 @@ const useGameLogic = () => {
       });
       if (trailRef.current.length > TRAIL_LENGTH) trailRef.current.length = TRAIL_LENGTH;
 
+      // ✅ REAL targetVX (smoothed, in "per-frame" units)
       const targetX = shapeBounds.x + shapeBounds.width / 2;
       const targetY = shapeBounds.y + shapeBounds.height / 2;
+
+      if (lastTargetXRef.current == null || lastAimTimeRef.current == null) {
+        lastTargetXRef.current = targetX;
+        lastAimTimeRef.current = time;
+        targetVXRef.current = 0;
+      } else {
+        const dtMs = Math.max(1, time - lastAimTimeRef.current);
+        const dx = targetX - lastTargetXRef.current;
+
+        const vxPerFrame = dx / (dtMs / 16.67);
+        const smoothed = targetVXRef.current * 0.75 + vxPerFrame * 0.25;
+
+        // (optional but recommended) clamp so one big rotation snap doesn't over-lead too hard
+        targetVXRef.current = clamp(smoothed, -10, 10);
+
+        lastTargetXRef.current = targetX;
+        lastAimTimeRef.current = time;
+      }
 
       updateAliensForFrame(alienStateRef.current, {
         delta,
@@ -706,7 +706,7 @@ const useGameLogic = () => {
         gameWidth: GAME_WIDTH,
         targetX,
         targetY,
-        targetVX: 0,
+        targetVX: targetVXRef.current,
         targetVY: speedRef.current * FALL_MULTIPLIER
       });
 

@@ -16,7 +16,7 @@ export const ALIEN_CONFIG = {
   COUNT: 2,
   FIRE_DELAY: 3000,
   SAFE_MARGIN: 12,
-  MAX_NON_LETHAL_HITS: 3,
+  SHAPE_LIVES: 2,
 
   // Aim behavior
   AIM_TIME_MS: 420,     // time spent aiming before firing
@@ -186,6 +186,7 @@ export const updateAlienBullets = (state, { delta, shapeBounds, gameHeight, onHi
   if (!state.activeRef.current || state.bulletsRef.current.length === 0) return { hit: false, lethal: false };
 
   let hit = false;
+  let hits = 0;
 
   const sx = shapeBounds.x - ALIEN_CONFIG.BULLET_RADIUS;
   const sy = shapeBounds.y - ALIEN_CONFIG.BULLET_RADIUS;
@@ -200,6 +201,7 @@ export const updateAlienBullets = (state, { delta, shapeBounds, gameHeight, onHi
 
     if (b.x >= sx && b.x <= sx + sw && b.y >= sy && b.y <= sy + sh) {
       hit = true;
+      hits += 1;
       return false;
     }
 
@@ -207,9 +209,9 @@ export const updateAlienBullets = (state, { delta, shapeBounds, gameHeight, onHi
   });
 
   if (hit) {
-    state.shapeDamageRef.current += 1;
-    state.totalHitsRef.current += 1;
-    const lethal = state.totalHitsRef.current > ALIEN_CONFIG.MAX_NON_LETHAL_HITS;
+    state.shapeDamageRef.current += hits;
+    state.totalHitsRef.current += hits;
+    const lethal = state.shapeDamageRef.current >= ALIEN_CONFIG.SHAPE_LIVES;
     if (onHit) onHit(lethal, shapeBounds);
     return { hit: true, lethal };
   }
