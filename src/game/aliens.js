@@ -4,17 +4,23 @@ import { randRange } from './util';
 
 export const ALIEN_CONFIG = {
   START_SCORE: 20,
-  WIDTH: 28,
-  HEIGHT: 22,
-  WALK_SPEED: 0.2,
-  BULLET_SPEED: 3.6,
+  WIDTH: 30,
+  HEIGHT: 24,
+  WALK_SPEED: 0.22,
+
+  BULLET_SPEED: 4.0,
+  BULLET_SPEED_JITTER: 0.9,
   MIN_COOLDOWN: 900,
   MAX_COOLDOWN: 1900,
   BULLET_RADIUS: 3.5,
   COUNT: 2,
   FIRE_DELAY: 3000,
   SAFE_MARGIN: 12,
-  MAX_NON_LETHAL_HITS: 3
+  MAX_NON_LETHAL_HITS: 3,
+
+  // Aim behavior
+  AIM_TIME_MS: 420,     // time spent aiming before firing
+  LEAD_FACTOR: 0.35     // predicts a little where the target will be
 };
 
 export const createAlienState = () => ({
@@ -37,6 +43,7 @@ const buildLanes = ({ gapX, gapWidth, gameWidth }) => {
   const gapStart = clamp(gapX, 0, gameWidth - gapWidth);
   const gapEnd = clamp(gapStart + gapWidth, gapStart, gameWidth);
   const margin = ALIEN_CONFIG.SAFE_MARGIN;
+
   const leftLane = { min: 6, max: Math.max(8, gapStart - margin - ALIEN_CONFIG.WIDTH) };
   const rightLane = {
     min: Math.min(gameWidth - ALIEN_CONFIG.WIDTH - 6, gapEnd + margin),
@@ -48,19 +55,28 @@ const buildLanes = ({ gapX, gapWidth, gameWidth }) => {
 export const spawnAlienWave = (state, { wallY, gapX, gapWidth, gameWidth, now = performance.now() }) => {
   const yBase = Math.max(0, wallY - ALIEN_CONFIG.HEIGHT - 4);
   const lanes = buildLanes({ gapX, gapWidth, gameWidth }).slice(0, ALIEN_CONFIG.COUNT);
+
   state.aliensRef.current = lanes.map((lane, idx) => {
     const usable = Math.max(0, lane.max - lane.min);
     const pos = usable > 2 ? lane.min + Math.random() * usable : lane.min;
+
     return {
       x: clamp(pos, lane.min, lane.max),
       y: yBase,
       dir: Math.random() > 0.5 ? 1 : -1,
-      speed: ALIEN_CONFIG.WALK_SPEED + Math.random() * 0.12,
+      speed: ALIEN_CONFIG.WALK_SPEED + Math.random() * 0.14,
       cooldown: randRange(ALIEN_CONFIG.MIN_COOLDOWN, ALIEN_CONFIG.MAX_COOLDOWN),
       lastShot: now + ALIEN_CONFIG.FIRE_DELAY + idx * 220,
-      laneIndex: idx
+      laneIndex: idx,
+
+      // aiming state
+      aiming: false,
+      aimUntil: 0,
+      aimTarget: { x: 0, y: 0 },
+      face: 1
     };
   });
+
   state.activeRef.current = true;
 };
 
@@ -72,17 +88,30 @@ export const maybeActivateAliens = (state, score, spawnFn) => {
   return false;
 };
 
-export const updateAliensForFrame = (state, { delta, now, gapX, gapWidth, gameWidth }) => {
+/**
+ * NOTE: This now expects target info so aliens can aim.
+ * You must pass these from useGameLogic:
+ *   targetX, targetY (center of falling object ideally)
+ *   targetVX, targetVY (optional)
+ */
+export const updateAliensForFrame = (
+  state,
+  { delta, now, gapX, gapWidth, gameWidth, targetX, targetY, targetVX = 0, targetVY = 0 }
+) => {
   if (!state.activeRef.current) return;
+
   const lanes = buildLanes({ gapX, gapWidth, gameWidth });
   const leftBounds = lanes[0];
   const rightBounds = lanes[1];
 
   state.aliensRef.current.forEach((alien) => {
+    // walk
     alien.x += alien.dir * alien.speed * delta;
+
     const lane = alien.laneIndex === 1 ? rightBounds : leftBounds;
     const min = lane.min;
     const max = Math.max(min, lane.max);
+
     if (alien.x <= min) {
       alien.x = min;
       alien.dir = 1;
@@ -91,35 +120,90 @@ export const updateAliensForFrame = (state, { delta, now, gapX, gapWidth, gameWi
       alien.dir = -1;
     }
 
-    const readyToShoot = now - alien.lastShot >= alien.cooldown;
-    if (readyToShoot && state.bulletsRef.current.length < 14) {
-      state.bulletsRef.current.push({
-        x: alien.x + ALIEN_CONFIG.WIDTH / 2,
-        y: alien.y - 6,
-        vy: -ALIEN_CONFIG.BULLET_SPEED - Math.random() * 1.2
-      });
-      alien.lastShot = now;
-      alien.cooldown = randRange(ALIEN_CONFIG.MIN_COOLDOWN, ALIEN_CONFIG.MAX_COOLDOWN);
+    // face target if present
+    if (Number.isFinite(targetX)) {
+      alien.face = targetX >= alien.x ? 1 : -1;
+    } else {
+      alien.face = alien.dir >= 0 ? 1 : -1;
     }
+
+    // shooting with aim phase
+    const readyToShoot = now - alien.lastShot >= alien.cooldown;
+    const bulletCapOk = state.bulletsRef.current.length < 16;
+
+    if (!readyToShoot || !bulletCapOk || !Number.isFinite(targetX) || !Number.isFinite(targetY)) {
+      alien.aiming = false;
+      return;
+    }
+
+    // start aiming
+    if (!alien.aiming) {
+      alien.aiming = true;
+      alien.aimUntil = now + ALIEN_CONFIG.AIM_TIME_MS;
+      alien.aimTarget = {
+        x: targetX + targetVX * ALIEN_CONFIG.LEAD_FACTOR * 12,
+        y: targetY + targetVY * ALIEN_CONFIG.LEAD_FACTOR * 12
+      };
+      return;
+    }
+
+    // still aiming
+    if (now < alien.aimUntil) return;
+
+    // fire
+    alien.aiming = false;
+
+    const muzzleX = alien.x + ALIEN_CONFIG.WIDTH / 2;
+    const muzzleY = alien.y - 6;
+
+    const tx = alien.aimTarget.x;
+    const ty = alien.aimTarget.y;
+
+    const dx = tx - muzzleX;
+    const dy = ty - muzzleY;
+
+    // ensure generally upward shots (negative y)
+    const safeDy = dy < -8 ? dy : -80;
+    const len = Math.max(1, Math.hypot(dx, safeDy));
+    const nx = dx / len;
+    const ny = safeDy / len;
+
+    const speed = ALIEN_CONFIG.BULLET_SPEED + Math.random() * ALIEN_CONFIG.BULLET_SPEED_JITTER;
+
+    state.bulletsRef.current.push({
+      x: muzzleX,
+      y: muzzleY,
+      vx: nx * speed,
+      vy: ny * speed
+    });
+
+    alien.lastShot = now;
+    alien.cooldown = randRange(ALIEN_CONFIG.MIN_COOLDOWN, ALIEN_CONFIG.MAX_COOLDOWN);
   });
 };
 
 export const updateAlienBullets = (state, { delta, shapeBounds, gameHeight, onHit }) => {
   if (!state.activeRef.current || state.bulletsRef.current.length === 0) return { hit: false, lethal: false };
+
   let hit = false;
+
   const sx = shapeBounds.x - ALIEN_CONFIG.BULLET_RADIUS;
   const sy = shapeBounds.y - ALIEN_CONFIG.BULLET_RADIUS;
   const sw = shapeBounds.width + ALIEN_CONFIG.BULLET_RADIUS * 2;
   const sh = shapeBounds.height + ALIEN_CONFIG.BULLET_RADIUS * 2;
 
   state.bulletsRef.current = state.bulletsRef.current.filter((b) => {
-    b.y += b.vy * delta;
-    if (b.y < -20) return false;
+    b.x += (b.vx ?? 0) * delta;
+    b.y += (b.vy ?? 0) * delta;
+
+    if (b.y < -40) return false;
+
     if (b.x >= sx && b.x <= sx + sw && b.y >= sy && b.y <= sy + sh) {
       hit = true;
       return false;
     }
-    return b.y <= gameHeight + 30;
+
+    return b.y <= gameHeight + 40;
   });
 
   if (hit) {
@@ -129,53 +213,131 @@ export const updateAlienBullets = (state, { delta, shapeBounds, gameHeight, onHi
     if (onHit) onHit(lethal, shapeBounds);
     return { hit: true, lethal };
   }
+
   return { hit: false, lethal: false };
 };
 
+/** ✅ NEW ALIEN LOOK: clearly alien-ish + walk + aim pose */
 export const drawAlien = (ctx, alien, now) => {
+  const W = ALIEN_CONFIG.WIDTH;
+  const H = ALIEN_CONFIG.HEIGHT;
+
   ctx.save();
   ctx.translate(alien.x, alien.y);
-  const sway = Math.sin(now / 420 + alien.x * 0.03) * 1.2;
-  const stride = Math.sin(now / 260 + alien.x * 0.08) * 2.6;
-  ctx.translate(0, sway);
 
-  const facing = alien.dir >= 0 ? 1 : -1;
+  // walk/idle motion
+  const t = now / 1000;
+  const stride = Math.sin(t * 9 + alien.x * 0.06) * 1.8;
+  const bob = Math.sin(t * 6 + alien.x * 0.03) * 0.7;
+  const aimPulse = alien.aiming ? (0.6 + Math.sin(now / 80) * 0.4) : 0;
 
-  ctx.fillStyle = '#2e1b4d';
+  const facing = alien.face ?? (alien.dir >= 0 ? 1 : -1);
+  ctx.translate(0, bob);
+
+  // shadow on wall
   ctx.save();
-  ctx.translate(ALIEN_CONFIG.WIDTH / 2, ALIEN_CONFIG.HEIGHT - 1.5);
-  ctx.rotate((stride * Math.PI) / 360);
-  ctx.fillRect(-ALIEN_CONFIG.WIDTH / 2 + 1, -1, 6, 2);
-  ctx.rotate((-stride * 2 * Math.PI) / 360);
-  ctx.fillRect(ALIEN_CONFIG.WIDTH / 2 - 7, -1, 6, 2);
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';
+  drawRoundedRect(ctx, 3, H - 4, W - 6, 4, 2, 'rgba(0,0,0,0.25)');
   ctx.restore();
 
-  const torsoFill = ctx.createLinearGradient(0, 0, 0, ALIEN_CONFIG.HEIGHT);
-  torsoFill.addColorStop(0, '#8a5bff');
-  torsoFill.addColorStop(1, '#44c0ff');
-  drawRoundedRect(ctx, 2, 6, ALIEN_CONFIG.WIDTH - 4, ALIEN_CONFIG.HEIGHT - 6, 7, torsoFill, 'rgba(255,255,255,0.18)');
-
-  ctx.beginPath();
-  ctx.arc(ALIEN_CONFIG.WIDTH / 2, 4, 6, 0, Math.PI * 2);
-  ctx.fillStyle = '#f5f3ff';
-  ctx.fill();
-  ctx.fillStyle = '#1b0f32';
-  ctx.fillRect(ALIEN_CONFIG.WIDTH / 2 - 5, 2, 4, 3);
-  ctx.fillRect(ALIEN_CONFIG.WIDTH / 2 + 1, 2, 4, 3);
-
+  // backpack / tank
   ctx.save();
-  ctx.translate(ALIEN_CONFIG.WIDTH / 2, ALIEN_CONFIG.HEIGHT / 2 + 2);
+  ctx.translate(W / 2, 12);
   ctx.scale(facing, 1);
-  ctx.fillStyle = '#51ffe6';
-  ctx.fillRect(5, -2 + stride * 0.1, 10, 4);
-  ctx.fillStyle = '#2ae6be';
-  ctx.fillRect(14, -3 + stride * 0.1, 5, 6);
+  drawRoundedRect(ctx, -W * 0.46, 2, 8, 14, 4, 'rgba(30,18,60,0.9)', 'rgba(255,255,255,0.10)');
   ctx.restore();
 
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.fillRect(4, ALIEN_CONFIG.HEIGHT - 8, ALIEN_CONFIG.WIDTH - 8, 3);
-  ctx.fillStyle = '#ffcf70';
-  ctx.fillRect(ALIEN_CONFIG.WIDTH / 2 - 3, ALIEN_CONFIG.HEIGHT - 9, 6, 2);
+  // legs
+  ctx.save();
+  ctx.translate(W / 2, H - 2);
+  ctx.scale(facing, 1);
+  ctx.fillStyle = '#2a1648';
+  // left leg
+  ctx.save();
+  ctx.rotate((stride * Math.PI) / 180);
+  drawRoundedRect(ctx, -W * 0.22, -2, 6, 8, 3, '#2a1648');
+  ctx.restore();
+  // right leg
+  ctx.save();
+  ctx.rotate((-stride * Math.PI) / 180);
+  drawRoundedRect(ctx, W * 0.16, -2, 6, 8, 3, '#2a1648');
+  ctx.restore();
+  ctx.restore();
+
+  // torso
+  const torsoGrad = ctx.createLinearGradient(0, 6, 0, H);
+  torsoGrad.addColorStop(0, '#7e4dff');
+  torsoGrad.addColorStop(1, '#35ccff');
+  drawRoundedRect(ctx, 4, 10, W - 8, H - 10, 9, torsoGrad, 'rgba(255,255,255,0.16)');
+
+  // head (big alien dome)
+  ctx.save();
+  ctx.translate(W / 2, 8);
+  ctx.scale(facing, 1);
+
+  const headGlow = ctx.createRadialGradient(0, -2, 2, 0, 2, 14);
+  headGlow.addColorStop(0, 'rgba(180,255,245,0.95)');
+  headGlow.addColorStop(1, 'rgba(130,190,255,0.20)');
+  ctx.fillStyle = headGlow;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 11, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 11, 9, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // eyes (big)
+  ctx.fillStyle = '#140b2c';
+  ctx.beginPath();
+  ctx.ellipse(-4, 1, 3.2, 4.2, -0.15, 0, Math.PI * 2);
+  ctx.ellipse(4, 1, 3.2, 4.2, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+
+  // eye shine
+  ctx.fillStyle = 'rgba(120,255,240,0.95)';
+  ctx.fillRect(-5.2, -1, 1.2, 1.2);
+  ctx.fillRect(2.8, -1, 1.2, 1.2);
+
+  // antenna
+  ctx.strokeStyle = 'rgba(120,255,240,0.75)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -8);
+  ctx.quadraticCurveTo(3 * facing, -12, 6 * facing, -13);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255, 200, 120, 0.95)';
+  ctx.beginPath();
+  ctx.arc(6 * facing, -13, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+
+  // arm + blaster (aim pose)
+  ctx.save();
+  ctx.translate(W / 2, 16);
+  ctx.scale(facing, 1);
+
+  const armY = 2 + stride * 0.2 + aimPulse * 0.6;
+  drawRoundedRect(ctx, 2, armY, 10, 5, 3, '#57f6cd', 'rgba(0,0,0,0.18)');
+
+  // gun
+  drawRoundedRect(ctx, 10, armY - 1, 10, 7, 3, '#2ae6be', 'rgba(255,255,255,0.12)');
+  drawRoundedRect(ctx, 18, armY + 1, 6, 3, 2, '#ffcf70');
+
+  // muzzle flash hint while aiming
+  if (alien.aiming) {
+    ctx.globalAlpha = 0.35 + 0.25 * aimPulse;
+    ctx.fillStyle = 'rgba(255, 237, 150, 0.9)';
+    ctx.beginPath();
+    ctx.arc(24, armY + 2, 2.2 + aimPulse, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
 
   ctx.restore();
 };
@@ -193,12 +355,15 @@ export const drawAliens = (ctx, state, now) => {
 export const drawAlienBullet = (ctx, bullet) => {
   ctx.save();
   ctx.translate(bullet.x, bullet.y);
+
   const glow = ctx.createRadialGradient(0, 0, 0.5, 0, 0, ALIEN_CONFIG.BULLET_RADIUS * 2.2);
   glow.addColorStop(0, 'rgba(255, 237, 150, 0.95)');
   glow.addColorStop(1, 'rgba(255, 140, 64, 0.15)');
+
   ctx.fillStyle = glow;
   ctx.beginPath();
   ctx.arc(0, 0, ALIEN_CONFIG.BULLET_RADIUS, 0, Math.PI * 2);
   ctx.fill();
+
   ctx.restore();
 };

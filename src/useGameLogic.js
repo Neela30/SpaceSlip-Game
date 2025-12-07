@@ -695,12 +695,19 @@ const useGameLogic = () => {
       });
       if (trailRef.current.length > TRAIL_LENGTH) trailRef.current.length = TRAIL_LENGTH;
 
+      const targetX = shapeBounds.x + shapeBounds.width / 2;
+      const targetY = shapeBounds.y + shapeBounds.height / 2;
+
       updateAliensForFrame(alienStateRef.current, {
         delta,
         now: time,
         gapX: gapPos,
         gapWidth: gapWidthRef.current,
-        gameWidth: GAME_WIDTH
+        gameWidth: GAME_WIDTH,
+        targetX,
+        targetY,
+        targetVX: 0,
+        targetVY: speedRef.current * FALL_MULTIPLIER
       });
 
       const { lethal: alienLethal } = updateAlienBullets(alienStateRef.current, {
