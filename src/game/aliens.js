@@ -1,5 +1,6 @@
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-const randRange = (min, max) => min + Math.random() * (max - min);
+import { drawRoundedRect } from './drawing';
+import { clamp } from './physics';
+import { randRange } from './util';
 
 export const ALIEN_CONFIG = {
   START_SCORE: 20,
@@ -129,27 +130,6 @@ export const updateAlienBullets = (state, { delta, shapeBounds, gameHeight, onHi
     return { hit: true, lethal };
   }
   return { hit: false, lethal: false };
-};
-
-const drawRoundedRect = (ctx, x, y, width, height, radius, fillStyle, strokeStyle) => {
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + width - radius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-  ctx.lineTo(x + width, y + height - radius);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  ctx.lineTo(x + radius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
-  ctx.fillStyle = fillStyle;
-  ctx.fill();
-  if (strokeStyle) {
-    ctx.strokeStyle = strokeStyle;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
 };
 
 export const drawAlien = (ctx, alien, now) => {
