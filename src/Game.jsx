@@ -7,6 +7,8 @@ const Game = () => {
     canvasRef,
     rotateLeft,
     rotateRight,
+    startFastDrop,
+    stopFastDrop,
     startGame,
     restartGame,
     togglePause,
@@ -17,6 +19,7 @@ const Game = () => {
     highScore,
     perfectActive,
     timeToDrop,
+    tipMessage,
   } = useGameLogic();
 
   const [isMobile, setIsMobile] = useState(false);
@@ -42,11 +45,14 @@ const Game = () => {
       if (
         event.code === "ArrowRight" ||
         event.code === "KeyD" ||
-        event.code === "Space" ||
-        event.code === "ArrowUp"
+        event.code === "Space"
       ) {
         event.preventDefault();
         rotateRight();
+      }
+      if (event.code === "ArrowDown") {
+        event.preventDefault();
+        startFastDrop();
       }
       if (event.code === "KeyP") {
         event.preventDefault();
@@ -60,7 +66,18 @@ const Game = () => {
 
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [gameRunning, handleStart, rotateLeft, rotateRight, togglePause]);
+  }, [gameRunning, handleStart, rotateLeft, rotateRight, startFastDrop, togglePause]);
+
+  useEffect(() => {
+    const handleKeyUp = (event) => {
+      if (event.code === "ArrowDown") {
+        event.preventDefault();
+        stopFastDrop();
+      }
+    };
+    window.addEventListener("keyup", handleKeyUp);
+    return () => window.removeEventListener("keyup", handleKeyUp);
+  }, [stopFastDrop]);
 
   const primaryLabel = useMemo(() => {
     if (gameOver) return "Restart";
@@ -215,8 +232,8 @@ const Game = () => {
             </button>
           </div>
 
-          <div className="rail-note">
-            Tip: give yourself more time by using the extra height — that’s the whole point 😄
+          <div className="rail-note" aria-live="polite">
+            {tipMessage}
           </div>
         </aside>
       </div>
@@ -225,3 +242,4 @@ const Game = () => {
 };
 
 export default Game;
+

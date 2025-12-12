@@ -39,6 +39,14 @@ import { SHAPE_LOOKUP, SHAPE_ORDER, SHAPE_VARIANTS } from './game/constants';
 const ROTATE_STEP = 90; // ✅ force 90° rotation per action
 const GAP_MOVE_DELAY = 200; // wait briefly before sliding the bar after a pass
 
+const TIP_COPY = {
+  start: 'Rotate with A/D, left/right arrows or Space (or tap the side arrows), then slide through the glowing gap.',
+  reward: 'Grab the golden star to widen the gap and slow your fall for a bit.',
+  aliens: 'Aliens are firing ahead—one bullet costs 0.5 point, two hits and you lose—stay in the gap for cover.'
+};
+
+const FAST_DROP_MULTIPLIER = 1.9;
+
 const useGameLogic = () => {
   const canvasRef = useRef(null);
   const { state: coreState, setters, refs, initialWallY } = createCoreState();
@@ -50,7 +58,8 @@ const useGameLogic = () => {
     perfectActive,
     highScore,
     timeToDrop,
-    rewardActive
+    rewardActive,
+    tipMessage
   } = coreState;
 
   const {
@@ -69,7 +78,8 @@ const useGameLogic = () => {
     setPerfectActive,
     setHighScore,
     setTimeToDrop,
-    setRewardActive
+    setRewardActive,
+    setTipMessage
   } = setters;
 
   const {
@@ -105,11 +115,14 @@ const useGameLogic = () => {
 
   const alienStateRef = useRef(createAlienState());
   const { shapeDamageRef, totalHitsRef } = alienStateRef.current;
+  const starTipShownRef = useRef(false);
+  const alienTipShownRef = useRef(false);
 
   // ✅ aiming velocity tracking for aliens
   const lastTargetXRef = useRef(null);
   const lastAimTimeRef = useRef(null);
   const targetVXRef = useRef(0);
+  const dropBoostRef = useRef(1);
 
   // ✅ NEW: track whether this falling object has already crossed the bar successfully
   const passedBarRef = useRef(false);
@@ -429,7 +442,12 @@ const useGameLogic = () => {
       const cx = shapeBounds.x + shapeBounds.width / 2;
       const cy = shapeBounds.y + shapeBounds.height / 2;
       spawnParticles(cx, cy, '#ff8c6a', 30, 'shard');
-      if (!lethal) return;
+      if (!lethal) {
+        const nextScore = Math.max(0, scoreRef.current - 0.5);
+        scoreRef.current = nextScore;
+        setScore(nextScore);
+        return;
+      }
       setTimeToDrop(null);
       setRewardActive(false);
       runningRef.current = false;
@@ -437,7 +455,7 @@ const useGameLogic = () => {
       setGameRunning(false);
       setPaused(false);
     },
-    [sfx, spawnParticles, setTimeToDrop, setRewardActive, setGameOver, setGameRunning, setPaused, runningRef]
+    [sfx, spawnParticles, setTimeToDrop, setRewardActive, setGameOver, setGameRunning, setPaused, runningRef, setScore]
   );
 
   const spawnShape = useCallback(
@@ -482,7 +500,7 @@ const useGameLogic = () => {
       setScore(nextScore);
       setHighScoreIfNeeded(nextScore);
 
-      maybeActivateAliens(alienStateRef.current, nextScore, () =>
+      const activatedAliens = maybeActivateAliens(alienStateRef.current, nextScore, () =>
         spawnAlienWave(alienStateRef.current, {
           wallY: wallYRef.current,
           gapX: gapXRef.current,
@@ -491,7 +509,16 @@ const useGameLogic = () => {
         })
       );
 
+      if (activatedAliens && !alienTipShownRef.current) {
+        setTipMessage(TIP_COPY.aliens);
+        alienTipShownRef.current = true;
+      }
+
       if (shouldSpawnReward(nextScore, nextRewardScoreRef)) {
+        if (!starTipShownRef.current) {
+          setTipMessage(TIP_COPY.reward);
+          starTipShownRef.current = true;
+        }
         spawnReward(rewardPosRef, wallYRef, setRewardActive);
       }
 
@@ -543,6 +570,7 @@ const useGameLogic = () => {
       setGapX,
       setHighScoreIfNeeded,
       setRewardActive,
+      setTipMessage,
       setScore,
       setSpeed,
       setTimeToDrop,
@@ -562,6 +590,10 @@ const useGameLogic = () => {
     trailRef.current = [];
     shakeRef.current = 0;
     setRewardActive(false);
+    dropBoostRef.current = 1;
+    starTipShownRef.current = false;
+    alienTipShownRef.current = false;
+    setTipMessage(TIP_COPY.start);
 
     totalHitsRef.current = 0;
     shapeDamageRef.current = 0;
@@ -617,6 +649,7 @@ const useGameLogic = () => {
     setPaused,
     setPerfectActive,
     setRewardActive,
+    setTipMessage,
     setScore,
     setSpeed,
     setTimeToDrop,
@@ -664,6 +697,15 @@ const useGameLogic = () => {
   const rotateLeft = useCallback(() => rotateBy(-ROTATE_STEP), [rotateBy]);
   const rotateRight = useCallback(() => rotateBy(ROTATE_STEP), [rotateBy]);
 
+  const startFastDrop = useCallback(() => {
+    if (!gameRunning || paused || gameOver) return;
+    dropBoostRef.current = FAST_DROP_MULTIPLIER;
+  }, [gameOver, gameRunning, paused]);
+
+  const stopFastDrop = useCallback(() => {
+    dropBoostRef.current = 1;
+  }, []);
+
   useEffect(() => {
     if (!gameRunning || paused) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -705,7 +747,8 @@ const useGameLogic = () => {
       // ✅ IMPORTANT CHANGE:
       // DO NOT clamp Y to the bar anymore. Let it move past the bar.
       const prevY = shapeYRef.current;
-      const nextY = prevY + speedRef.current * FALL_MULTIPLIER * delta;
+      const fallSpeed = speedRef.current * dropBoostRef.current;
+      const nextY = prevY + fallSpeed * FALL_MULTIPLIER * delta;
 
       // bounds at nextY (for aiming + bullets)
       const shapeBounds = { x: shapeXRef.current, y: nextY, width: shapeWidth, height: shapeHeight };
@@ -832,7 +875,7 @@ const useGameLogic = () => {
       if (!passedBarRef.current) {
         const remaining = wallYRef.current - nextY - shapeHeight;
         if (time - lastEtaUpdateRef.current > 90) {
-          const etaSeconds = remaining > 0 ? remaining / (speedRef.current * FALL_MULTIPLIER * 60) : 0;
+          const etaSeconds = remaining > 0 ? remaining / (fallSpeed * FALL_MULTIPLIER * 60) : 0;
           setTimeToDrop(Number(etaSeconds.toFixed(1)));
           lastEtaUpdateRef.current = time;
         }
@@ -889,6 +932,8 @@ const useGameLogic = () => {
     canvasRef,
     rotateLeft,
     rotateRight,
+    startFastDrop,
+    stopFastDrop,
     startGame,
     restartGame,
     togglePause,
@@ -904,7 +949,8 @@ const useGameLogic = () => {
     shapeX: coreState.shapeX,
     wallY: coreState.wallY,
     perfectActive,
-    timeToDrop
+    timeToDrop,
+    tipMessage
   };
 };
 
