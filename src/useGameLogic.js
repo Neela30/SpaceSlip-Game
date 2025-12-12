@@ -18,6 +18,7 @@ import {
   INITIAL_GAP,
   INITIAL_SPEED,
   DRIFT_STEP,
+  GAP_EDGE_MARGIN,
   MAX_PARTICLES,
   MAX_SPEED,
   MIN_GAP,
@@ -36,21 +37,13 @@ import { collectReward, resetRewards, shouldSpawnReward, spawnReward } from './g
 import { SHAPE_LOOKUP, SHAPE_ORDER, SHAPE_VARIANTS } from './game/constants';
 
 const ROTATE_STEP = 90; // ✅ force 90° rotation per action
+const GAP_MOVE_DELAY = 200; // wait briefly before sliding the bar after a pass
 
 const useGameLogic = () => {
   const canvasRef = useRef(null);
   const { state: coreState, setters, refs, initialWallY } = createCoreState();
 
   const {
-    shapeX,
-    shapeY,
-    shapeRotation,
-    shapeType,
-    wallY,
-    gapX,
-    gapWidth,
-    speed,
-    score,
     gameRunning,
     gameOver,
     paused,
@@ -113,10 +106,15 @@ const useGameLogic = () => {
   const alienStateRef = useRef(createAlienState());
   const { shapeDamageRef, totalHitsRef } = alienStateRef.current;
 
-  // ✅ NEW: real horizontal velocity tracking for aiming
+  // ✅ aiming velocity tracking for aliens
   const lastTargetXRef = useRef(null);
   const lastAimTimeRef = useRef(null);
   const targetVXRef = useRef(0);
+
+  // ✅ NEW: track whether this falling object has already crossed the bar successfully
+  const passedBarRef = useRef(false);
+  // gap movement tween so the bar slides quickly then eases out
+  const gapTransitionRef = useRef({ active: false, from: 0, to: 0, startTime: 0, duration: 1, delay: 0 });
 
   const sfx = useMemo(() => createSfx(audioCtxRef), []);
 
@@ -148,7 +146,7 @@ const useGameLogic = () => {
     const onResize = () => resizeCanvas();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [resizeCanvas]);
+  }, [resizeCanvas, setHighScore, highScoreRef, starfieldRef]);
 
   const drawFrame = useCallback(
     (currentGapX = activeGapXRef.current, overrideY, now = performance.now(), delta = 1) => {
@@ -169,6 +167,7 @@ const useGameLogic = () => {
         shakeRef.current = lerp(shakeRef.current, 0, 0.08 * delta);
       }
 
+      // background
       const bgGrad = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
       bgGrad.addColorStop(0, '#0c162b');
       bgGrad.addColorStop(1, '#0a1020');
@@ -188,14 +187,7 @@ const useGameLogic = () => {
       ctx.fillStyle = planet;
       ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
-      ctx.save();
-      ctx.globalAlpha = 0.18;
-      ctx.fillStyle = '#6ee7f0';
-      for (let i = 0; i <= GAME_HEIGHT; i += 64) {
-        ctx.fillRect(0, i, GAME_WIDTH, 1);
-      }
-      ctx.restore();
-
+      // starfield
       ctx.save();
       starfieldRef.current.forEach((star) => {
         const sp = (0.35 + star.depth * 0.8) * delta;
@@ -210,6 +202,7 @@ const useGameLogic = () => {
       });
       ctx.restore();
 
+      // bar
       const wallTop = wallYRef.current;
       const gapSize = gapWidthRef.current;
       const narrowness = clamp(1 - (gapSize - MIN_GAP) / (INITIAL_GAP - MIN_GAP), 0, 1);
@@ -250,8 +243,10 @@ const useGameLogic = () => {
       ctx.stroke();
       ctx.restore();
 
+      // aliens
       drawAliens(ctx, alienStateRef.current, now);
 
+      // trail
       ctx.save();
       trailRef.current.forEach((snap, idx) => {
         const alpha = 0.24 - idx * 0.02;
@@ -271,6 +266,7 @@ const useGameLogic = () => {
       });
       ctx.restore();
 
+      // particles
       ctx.save();
       particlesRef.current = particlesRef.current.filter((p) => p.life < p.maxLife);
       particlesRef.current.forEach((p) => {
@@ -296,6 +292,7 @@ const useGameLogic = () => {
       });
       ctx.restore();
 
+      // reward
       if (rewardActive) {
         const { x: rx, y: ry } = rewardPosRef.current;
         drawStar(ctx, {
@@ -303,11 +300,12 @@ const useGameLogic = () => {
           y: ry,
           radius: REWARD_SIZE / 2,
           rotation: now / 400,
-          fill: '#ffd166',
-          glow: 'rgba(255, 209, 102, 0.5)'
+          fill: '#ffe69a',
+          glow: 'rgba(255, 230, 160, 0.85)'
         });
       }
 
+      // falling shape (can now go below the bar)
       const { width: shapeWidth, height: shapeHeight } = getShapeSize();
       const rectY = overrideY !== undefined ? overrideY : shapeYRef.current;
 
@@ -332,8 +330,10 @@ const useGameLogic = () => {
       });
       ctx.restore();
 
+      // alien bullets
       drawAlienShots(ctx, alienStateRef.current);
 
+      // perfect ribbon
       if (perfectActive) {
         ctx.save();
         const ribbonY = GAME_HEIGHT * 0.28;
@@ -360,7 +360,7 @@ const useGameLogic = () => {
         ctx.restore();
       }
     },
-    [getShapeSize, perfectActive, rewardActive]
+    [getShapeSize, perfectActive, rewardActive, lerp]
   );
 
   const triggerPerfect = useCallback(() => {
@@ -369,7 +369,7 @@ const useGameLogic = () => {
     perfectTimerRef.current = setTimeout(() => setPerfectActive(false), 500);
     shakeRef.current = 6;
     squashRef.current = 1.06;
-  }, []);
+  }, [perfectTimerRef, setPerfectActive]);
 
   const spawnParticles = useCallback((x, y, tint = '#7dd8ff', count = 26, kind = 'spark') => {
     const pool = particlesRef.current;
@@ -388,34 +388,38 @@ const useGameLogic = () => {
         rot: Math.random() * Math.PI
       });
     }
-  }, []);
+  }, [particlesRef]);
 
   const pickDriftMode = useCallback(() => {
     driftModeRef.current = 'sine';
     driftPhaseRef.current = Math.random() * Math.PI * 2;
-  }, []);
+  }, [driftModeRef, driftPhaseRef]);
 
   const randomGapX = useCallback((width) => {
-    const margin = 6;
-    const usable = GAME_WIDTH - width - margin * 2;
+    const margin = GAP_EDGE_MARGIN;
+    const usable = Math.max(0, GAME_WIDTH - width - margin * 2);
     const base = Math.random() * usable + margin;
-    return clamp(base, 0, GAME_WIDTH - width);
+    const maxPos = Math.max(margin, GAME_WIDTH - width - margin);
+    return clamp(base, margin, maxPos);
   }, []);
 
-  const setHighScoreIfNeeded = useCallback((value) => {
-    if (value > highScoreRef.current) {
-      highScoreRef.current = value;
-      setHighScore(value);
-      localStorage.setItem('perfect-fit-highscore', String(value));
-    }
-  }, []);
+  const setHighScoreIfNeeded = useCallback(
+    (value) => {
+      if (value > highScoreRef.current) {
+        highScoreRef.current = value;
+        setHighScore(value);
+        localStorage.setItem('perfect-fit-highscore', String(value));
+      }
+    },
+    [highScoreRef, setHighScore]
+  );
 
   const pickShapeVariant = useCallback(() => {
     const nextIndex = shapeOrderIndexRef.current % SHAPE_ORDER.length;
     const nextId = SHAPE_ORDER[nextIndex];
     shapeOrderIndexRef.current = nextIndex + 1;
     return SHAPE_LOOKUP[nextId] || SHAPE_VARIANTS[0];
-  }, []);
+  }, [shapeOrderIndexRef]);
 
   const handleAlienHit = useCallback(
     (shapeBounds, lethal = true) => {
@@ -433,7 +437,7 @@ const useGameLogic = () => {
       setGameRunning(false);
       setPaused(false);
     },
-    [spawnParticles, sfx]
+    [sfx, spawnParticles, setTimeToDrop, setRewardActive, setGameOver, setGameRunning, setPaused, runningRef]
   );
 
   const spawnShape = useCallback(
@@ -459,32 +463,19 @@ const useGameLogic = () => {
 
       shapeXRef.current = startX;
       setShapeX(startX);
+
       shapeYRef.current = resetY;
       setShapeY(resetY);
 
       return { width, height };
     },
-    [getShapeSize, pickShapeVariant]
+    [getShapeSize, pickShapeVariant, setShapeType, setShapeRotation, setShapeX, setShapeY]
   );
 
-  const handleLanding = useCallback(
-    ({ gapPos, currentGapWidth, shapeWidth, shapeHeight }) => {
-      const hitWall = shapeXRef.current < gapPos || shapeXRef.current + shapeWidth > gapPos + currentGapWidth;
-
-      if (hitWall) {
-        sfx.fail();
-        vibrate(140);
-        shakeRef.current = 12;
-        spawnParticles(shapeXRef.current + shapeWidth / 2, wallYRef.current - WALL_HEIGHT, '#4a5568', 28, 'shard');
-        setTimeToDrop(null);
-        setRewardActive(false);
-        runningRef.current = false;
-        setGameOver(true);
-        setGameRunning(false);
-        setPaused(false);
-        return;
-      }
-
+  // ✅ NEW: what used to be "landing" is now "successful pass" (score + difficulty),
+  // but we DO NOT spawn the next object here. The current one keeps falling.
+  const handleSuccessfulPass = useCallback(
+    ({ gapPos, currentGapWidth, shapeWidth }) => {
       const scoreGain = shapeDamageRef.current > 0 ? 0.5 : 1;
       const nextScore = scoreRef.current + scoreGain;
       scoreRef.current = nextScore;
@@ -510,8 +501,9 @@ const useGameLogic = () => {
         spawnParticles(shapeXRef.current + shapeWidth / 2, wallYRef.current - WALL_HEIGHT * 1.6, '#ffb347', 40);
       }
 
+      const prevGapX = gapXRef.current;
+
       sfx.chime();
-      spawnParticles(shapeXRef.current + shapeWidth / 2, wallYRef.current - WALL_HEIGHT, '#6fd8ff', 24);
       squashRef.current = 0.9;
 
       const nextGapWidth = Math.max(MIN_GAP, currentGapWidth - GAP_SHRINK);
@@ -521,16 +513,43 @@ const useGameLogic = () => {
 
       gapWidthRef.current = nextGapWidth;
       setGapWidth(nextGapWidth);
+
       gapXRef.current = nextGapX;
       setGapX(nextGapX);
+
       speedRef.current = nextSpeed;
       setSpeed(nextSpeed);
-      driftAmplitudeRef.current = nextDrift;
 
+      driftAmplitudeRef.current = nextDrift;
       pickDriftMode();
-      spawnShape(true);
+
+      // once we passed, ETA isn't meaningful until the next spawn
+      setTimeToDrop(null);
+
+      // slide the bar quickly to its next position, easing out
+      gapTransitionRef.current = {
+        active: true,
+        from: prevGapX,
+        to: nextGapX,
+        startTime: performance.now(),
+        duration: 260,
+        delay: GAP_MOVE_DELAY
+      };
     },
-    [pickDriftMode, randomGapX, setHighScoreIfNeeded, spawnParticles, spawnShape, sfx, triggerPerfect]
+    [
+      pickDriftMode,
+      randomGapX,
+      setGapWidth,
+      setGapX,
+      setHighScoreIfNeeded,
+      setRewardActive,
+      setScore,
+      setSpeed,
+      setTimeToDrop,
+      sfx,
+      spawnParticles,
+      triggerPerfect
+    ]
   );
 
   const startGame = useCallback(() => {
@@ -547,10 +566,14 @@ const useGameLogic = () => {
     totalHitsRef.current = 0;
     shapeDamageRef.current = 0;
 
-    // ✅ reset aim velocity tracking on new game
+    // reset aim velocity tracking
     lastTargetXRef.current = null;
     lastAimTimeRef.current = null;
     targetVXRef.current = 0;
+
+    // ✅ reset pass-through state
+    passedBarRef.current = false;
+    gapTransitionRef.current = { active: false, from: 0, to: 0, startTime: 0, duration: 1, delay: 0 };
 
     resetAliensState(alienStateRef.current);
     resetRewards(nextRewardScoreRef);
@@ -582,14 +605,32 @@ const useGameLogic = () => {
 
     runningRef.current = true;
     setGameRunning(true);
-  }, [pickDriftMode, randomGapX, spawnShape]);
+  }, [
+    initialWallY,
+    pickDriftMode,
+    randomGapX,
+    resetAliensState,
+    setGameOver,
+    setGameRunning,
+    setGapWidth,
+    setGapX,
+    setPaused,
+    setPerfectActive,
+    setRewardActive,
+    setScore,
+    setSpeed,
+    setTimeToDrop,
+    setWallY,
+    spawnShape,
+    perfectTimerRef
+  ]);
 
   const restartGame = useCallback(() => startGame(), [startGame]);
 
   const togglePause = useCallback(() => {
     if (!gameRunning || gameOver) return;
     setPaused((prev) => !prev);
-  }, [gameOver, gameRunning]);
+  }, [gameOver, gameRunning, setPaused]);
 
   const rotateBy = useCallback(
     (delta) => {
@@ -617,7 +658,7 @@ const useGameLogic = () => {
       squashRef.current = 1.04;
       sfx.click();
     },
-    [gameOver, gameRunning, getShapeSize, paused, sfx]
+    [gameOver, gameRunning, getShapeSize, paused, sfx, setShapeRotation, setShapeX]
   );
 
   const rotateLeft = useCallback(() => rotateBy(-ROTATE_STEP), [rotateBy]);
@@ -639,13 +680,37 @@ const useGameLogic = () => {
 
       const driftOffset = driftOffsetForMode(time, driftAmplitudeRef.current, driftModeRef.current, driftPhaseRef.current);
 
-      const gapPos = clamp(gapXRef.current + driftOffset, 0, GAME_WIDTH - gapWidthRef.current);
+      let baseGapX = gapXRef.current;
+      const transition = gapTransitionRef.current;
+      if (transition.active) {
+        const elapsed = time - transition.startTime - (transition.delay || 0);
+        if (elapsed <= 0) {
+          baseGapX = transition.from;
+        } else {
+          const t = clamp(elapsed / transition.duration, 0, 1);
+          const eased = 1 - (1 - t) * (1 - t);
+          baseGapX = lerp(transition.from, transition.to, eased);
+          if (t >= 1) {
+            transition.active = false;
+            baseGapX = transition.to;
+          }
+        }
+      }
+
+      const minGapX = GAP_EDGE_MARGIN;
+      const maxGapX = Math.max(minGapX, GAME_WIDTH - gapWidthRef.current - GAP_EDGE_MARGIN);
+      const gapPos = clamp(baseGapX + driftOffset, minGapX, maxGapX);
       activeGapXRef.current = gapPos;
 
-      const nextY = shapeYRef.current + speedRef.current * FALL_MULTIPLIER * delta;
-      const projectedY = Math.min(nextY, wallYRef.current - shapeHeight);
-      const shapeBounds = { x: shapeXRef.current, y: projectedY, width: shapeWidth, height: shapeHeight };
+      // ✅ IMPORTANT CHANGE:
+      // DO NOT clamp Y to the bar anymore. Let it move past the bar.
+      const prevY = shapeYRef.current;
+      const nextY = prevY + speedRef.current * FALL_MULTIPLIER * delta;
 
+      // bounds at nextY (for aiming + bullets)
+      const shapeBounds = { x: shapeXRef.current, y: nextY, width: shapeWidth, height: shapeHeight };
+
+      // reward collection
       if (rewardActive) {
         const r = rewardPosRef.current;
         const half = REWARD_SIZE / 2;
@@ -667,6 +732,7 @@ const useGameLogic = () => {
         }
       }
 
+      // trail
       trailRef.current.unshift({
         x: shapeXRef.current,
         y: shapeYRef.current,
@@ -676,7 +742,7 @@ const useGameLogic = () => {
       });
       if (trailRef.current.length > TRAIL_LENGTH) trailRef.current.length = TRAIL_LENGTH;
 
-      // ✅ REAL targetVX (smoothed, in "per-frame" units)
+      // aiming velocity for aliens
       const targetX = shapeBounds.x + shapeBounds.width / 2;
       const targetY = shapeBounds.y + shapeBounds.height / 2;
 
@@ -687,13 +753,9 @@ const useGameLogic = () => {
       } else {
         const dtMs = Math.max(1, time - lastAimTimeRef.current);
         const dx = targetX - lastTargetXRef.current;
-
         const vxPerFrame = dx / (dtMs / 16.67);
         const smoothed = targetVXRef.current * 0.75 + vxPerFrame * 0.25;
-
-        // (optional but recommended) clamp so one big rotation snap doesn't over-lead too hard
         targetVXRef.current = clamp(smoothed, -10, 10);
-
         lastTargetXRef.current = targetX;
         lastAimTimeRef.current = time;
       }
@@ -718,41 +780,102 @@ const useGameLogic = () => {
       });
 
       if (alienLethal) {
+        // freeze where hit occurred visually
         drawFrame(gapPos, shapeBounds.y, time, delta);
         return;
       }
 
-      const remaining = wallYRef.current - shapeBounds.y - shapeHeight;
-      if (time - lastEtaUpdateRef.current > 90) {
-        const etaSeconds = remaining > 0 ? remaining / (speedRef.current * FALL_MULTIPLIER * 60) : 0;
-        setTimeToDrop(Number(etaSeconds.toFixed(1)));
-        lastEtaUpdateRef.current = time;
+      // ✅ BAR CROSSING CHECK:
+      // Keep validating while the shape overlaps the bar; only mark success after clearing it fully.
+      const barTop = wallYRef.current;
+      const barBottom = barTop + WALL_HEIGHT;
+      const shapeTopNext = nextY;
+      const shapeBottomNext = nextY + shapeHeight;
+      const overlappingBar = shapeTopNext < barBottom && shapeBottomNext >= barTop;
+
+      if (overlappingBar && !passedBarRef.current) {
+        const hitWall = shapeXRef.current < gapPos || shapeXRef.current + shapeWidth > gapPos + gapWidthRef.current;
+
+        if (hitWall) {
+          // blast at impact point
+          sfx.fail();
+          vibrate(140);
+          shakeRef.current = 12;
+
+          const impactY = barTop - shapeHeight;
+          spawnParticles(shapeXRef.current + shapeWidth / 2, impactY, '#4a5568', 32, 'shard');
+
+          setTimeToDrop(null);
+          setRewardActive(false);
+          runningRef.current = false;
+          setGameOver(true);
+          setGameRunning(false);
+          setPaused(false);
+
+          drawFrame(gapPos, impactY, time, delta);
+          return;
+        }
       }
 
-      if (nextY >= wallYRef.current - shapeHeight) {
-        drawFrame(gapPos, wallYRef.current - shapeHeight, time, delta);
-        handleLanding({
+      // ✅ success: once fully below the bar, update score/difficulty, but KEEP falling
+      if (!passedBarRef.current && shapeTopNext >= barBottom) {
+        passedBarRef.current = true;
+        handleSuccessfulPass({
           gapPos,
           currentGapWidth: gapWidthRef.current,
           shapeWidth,
           shapeHeight
         });
-        if (runningRef.current) rafRef.current = requestAnimationFrame(step);
-      } else {
-        shapeYRef.current = nextY;
-        setShapeY(nextY);
-        drawFrame(gapPos, undefined, time, delta);
-        rafRef.current = requestAnimationFrame(step);
       }
+
+      // ETA only matters before passing the bar
+      if (!passedBarRef.current) {
+        const remaining = wallYRef.current - nextY - shapeHeight;
+        if (time - lastEtaUpdateRef.current > 90) {
+          const etaSeconds = remaining > 0 ? remaining / (speedRef.current * FALL_MULTIPLIER * 60) : 0;
+          setTimeToDrop(Number(etaSeconds.toFixed(1)));
+          lastEtaUpdateRef.current = time;
+        }
+      }
+
+      // apply y + draw
+      shapeYRef.current = nextY;
+      setShapeY(nextY);
+      drawFrame(gapPos, undefined, time, delta);
+
+      // ✅ respawn only after it has visually passed through and left the screen
+      if (passedBarRef.current && nextY > GAME_HEIGHT + 60) {
+        passedBarRef.current = false;
+        spawnShape(true);
+      }
+
+      if (runningRef.current) rafRef.current = requestAnimationFrame(step);
     };
 
     rafRef.current = requestAnimationFrame(step);
     return () => rafRef.current && cancelAnimationFrame(rafRef.current);
-  }, [drawFrame, gameRunning, getShapeSize, handleAlienHit, handleLanding, paused, rewardActive, spawnParticles]);
+  }, [
+    drawFrame,
+    gameRunning,
+    getShapeSize,
+    handleAlienHit,
+    handleSuccessfulPass,
+    paused,
+    rewardActive,
+    spawnParticles,
+    spawnShape,
+    sfx,
+    setGameOver,
+    setGameRunning,
+    setPaused,
+    setRewardActive,
+    setShapeY,
+    setTimeToDrop
+  ]);
 
   useEffect(() => {
     runningRef.current = gameRunning;
-  }, [gameRunning]);
+  }, [gameRunning, runningRef]);
 
   useEffect(() => {
     drawFrame(gapXRef.current);
@@ -760,7 +883,7 @@ const useGameLogic = () => {
       if (perfectTimerRef.current) clearTimeout(perfectTimerRef.current);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [drawFrame]);
+  }, [drawFrame, gapXRef, perfectTimerRef, rafRef]);
 
   return {
     canvasRef,
@@ -772,14 +895,14 @@ const useGameLogic = () => {
     gameRunning,
     paused,
     gameOver,
-    shapeRotation,
-    gapWidth,
-    speed,
-    score,
+    shapeRotation: coreState.shapeRotation,
+    gapWidth: coreState.gapWidth,
+    speed: coreState.speed,
+    score: coreState.score,
     highScore,
-    shapeY,
-    shapeX,
-    wallY,
+    shapeY: coreState.shapeY,
+    shapeX: coreState.shapeX,
+    wallY: coreState.wallY,
     perfectActive,
     timeToDrop
   };

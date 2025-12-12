@@ -5,6 +5,7 @@ export const SHORT_SIDE = 46;
 export const WALL_HEIGHT = 18;
 export const INITIAL_GAP = 210;
 export const MIN_GAP = 74;
+export const GAP_EDGE_MARGIN = 24;
 export const INITIAL_SPEED = 1.1;
 export const SPEED_STEP = 0.2;
 export const GAP_SHRINK = 6.4;

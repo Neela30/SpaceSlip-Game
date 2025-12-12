@@ -1,6 +1,7 @@
 import {
   GAME_WIDTH,
   INITIAL_GAP,
+  GAP_EDGE_MARGIN,
   MIN_GAP,
   REWARD_FIRST_SCORE,
   REWARD_GAP_BONUS,
@@ -39,7 +40,9 @@ export const collectReward = ({
   const widened = clamp(gapWidthRef.current + REWARD_GAP_BONUS, MIN_GAP, INITIAL_GAP);
   gapWidthRef.current = widened;
   setGapWidth(widened);
-  const newGapX = clamp(gapXRef.current, 0, GAME_WIDTH - widened);
+  const minGapX = GAP_EDGE_MARGIN;
+  const maxGapX = Math.max(minGapX, GAME_WIDTH - widened - GAP_EDGE_MARGIN);
+  const newGapX = clamp(gapXRef.current, minGapX, maxGapX);
   gapXRef.current = newGapX;
   setGapX(newGapX);
   return { x, y };

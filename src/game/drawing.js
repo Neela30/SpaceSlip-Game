@@ -30,12 +30,39 @@ export const createStarfield = () =>
   }));
 
 export const drawStar = (ctx, { x, y, radius, rotation = 0, fill = '#ffd166', glow = 'rgba(255, 209, 102, 0.6)' }) => {
+  const time = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const twinkle = 0.12 + Math.sin(time / 200) * 0.12;
+
   ctx.save();
   ctx.translate(x, y);
+
+  ctx.globalCompositeOperation = 'lighter';
+
+  const haloRadius = radius * (2.2 + twinkle * 2);
+  const halo = ctx.createRadialGradient(0, 0, radius * 0.3, 0, 0, haloRadius);
+  halo.addColorStop(0, 'rgba(255, 241, 200, 0.9)');
+  halo.addColorStop(0.45, 'rgba(255, 209, 120, 0.6)');
+  halo.addColorStop(1, 'rgba(255, 184, 94, 0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(0, 0, haloRadius, 0, Math.PI * 2);
+  ctx.fill();
+
   ctx.rotate(rotation);
+
+  const rayLen = radius * (1.5 + twinkle * 1.4);
+  const rayWidth = Math.max(2.4, radius * 0.16);
+  ctx.fillStyle = 'rgba(255, 242, 200, 0.55)';
+  for (let i = 0; i < 4; i++) {
+    ctx.save();
+    ctx.rotate((Math.PI / 4) * i);
+    ctx.fillRect(-rayWidth / 2, -rayLen, rayWidth, rayLen * 2);
+    ctx.restore();
+  }
+
   ctx.beginPath();
   const spikes = 5;
-  const inner = radius * 0.48;
+  const inner = radius * 0.5;
   for (let i = 0; i < spikes; i++) {
     const outerAngle = (i * 2 * Math.PI) / spikes - Math.PI / 2;
     const innerAngle = outerAngle + Math.PI / spikes;
@@ -43,10 +70,24 @@ export const drawStar = (ctx, { x, y, radius, rotation = 0, fill = '#ffd166', gl
     ctx.lineTo(Math.cos(innerAngle) * inner, Math.sin(innerAngle) * inner);
   }
   ctx.closePath();
-  ctx.fillStyle = fill;
+
+  const bodyFill = ctx.createLinearGradient(-radius, -radius, radius, radius);
+  bodyFill.addColorStop(0, '#fff1c8');
+  bodyFill.addColorStop(1, fill);
+  ctx.fillStyle = bodyFill;
   ctx.shadowColor = glow;
-  ctx.shadowBlur = 14;
+  ctx.shadowBlur = 26 + twinkle * 18;
   ctx.fill();
+
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * (0.2 + twinkle * 0.5), 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.fill();
+
   ctx.restore();
 };
 
