@@ -94,9 +94,9 @@ const Game = () => {
         {/* LEFT: Brand rail (desktop only) */}
         <aside className="side-rail left-rail" aria-label="Brand">
           <div className="brand-card">
-            <div className="brand-mark">PF</div>
+            <div className="brand-mark">SS</div>
             <div className="brand-vertical">
-              <div className="brand-title">Perfect Fit</div>
+              <div className="brand-title">SpaceSlip</div>
               <div className="brand-subtitle">Rotate. Align. Glide through the gap.</div>
             </div>
           </div>
@@ -104,8 +104,12 @@ const Game = () => {
           <div className="kbd-card">
             <div className="kbd-title">Keys</div>
             <div className="kbd-row">
-              <span className="kbd-pill">A / ←</span>
-              <span className="kbd-pill">D / → / Space</span>
+              <span className="kbd-pill">A / Left</span>
+              <span className="kbd-pill">D / Right / Space</span>
+            </div>
+            <div className="kbd-row">
+              <span className="kbd-pill">Down Arrow</span>
+              <span className="kbd-hint">Fast drop</span>
             </div>
             <div className="kbd-row">
               <span className="kbd-pill">P</span>
@@ -206,7 +210,7 @@ const Game = () => {
               <span className="stat-value">{highScore}</span>
             </div>
             <div className="stat-row">
-              <span className="stat-label">Drop ETA</span>
+              <span className="stat-label">Time to Impact</span>
               <span className="stat-value mono">{timeToDrop != null ? `${timeToDrop}s` : "--"}</span>
             </div>
 
