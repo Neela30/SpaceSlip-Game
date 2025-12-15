@@ -28,8 +28,9 @@ const Game = () => {
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
+    const hasTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
     const mq = window.matchMedia("(max-width: 920px)");
-    const handler = () => setIsMobile(mq.matches);
+    const handler = () => setIsMobile(hasTouch && mq.matches);
     handler();
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
