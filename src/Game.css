@@ -230,6 +230,24 @@
   opacity: 0.5;
 }
 
+.mobile-tip-pop {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(3, 10, 18, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f4fbff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.35);
+  max-width: calc(100% - 20px);
+  text-align: center;
+  z-index: 7;
+}
+
 /* ===== Overlays and effects (kept from your original) ===== */
 .perfect-chip {
   position: absolute;
@@ -280,6 +298,89 @@
 .overlay-copy {
   margin: 6px 0 14px;
   color: #c4d3ea;
+}
+
+.mobile-overlay-name {
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: #f4fbff;
+  margin-bottom: 10px;
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: linear-gradient(120deg, rgba(77, 243, 201, 0.2), rgba(125, 216, 255, 0.2));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.mobile-brand-wrapper {
+  margin-bottom: 26px;
+}
+
+.mobile-brand-card {
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mobile-brand-mark {
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  background: radial-gradient(circle at 30% 30%, rgba(77, 243, 201, 0.9), rgba(125, 216, 255, 0.7));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  color: #021019;
+}
+
+.mobile-brand-text {
+  display: grid;
+  gap: 4px;
+}
+
+.mobile-brand-title {
+  font-weight: 900;
+  color: #f4fbff;
+  letter-spacing: -0.01em;
+}
+
+.mobile-brand-subtitle {
+  color: #b7c6d8;
+  font-size: 0.92rem;
+  line-height: 1.1;
+}
+
+.mobile-key-list {
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.mobile-key-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.9rem;
+}
+
+.mobile-key-pill {
+  font-weight: 800;
+  color: #f4fbff;
+}
+
+.mobile-key-hint {
+  color: #a9bddb;
+  font-weight: 700;
 }
 
 .overlay-actions {

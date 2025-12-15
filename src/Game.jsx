@@ -9,6 +9,9 @@ const Game = () => {
     rotateRight,
     startFastDrop,
     stopFastDrop,
+    handleTapControl,
+    soundOn,
+    toggleSound,
     startGame,
     restartGame,
     togglePause,
@@ -88,6 +91,77 @@ const Game = () => {
 
   const statusText = gameRunning ? (paused ? "Paused" : "Running") : "Ready";
 
+  const START_TIP_TEXT =
+    "Rotate with A/D, left/right arrows or Space (or tap the side arrows), then slide through the glowing gap.";
+
+  const [mobileTipVisible, setMobileTipVisible] = useState(false);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    if (!tipMessage) {
+      setMobileTipVisible(false);
+      return;
+    }
+    setMobileTipVisible(true);
+    const id = setTimeout(() => setMobileTipVisible(false), 2000);
+    return () => clearTimeout(id);
+  }, [isMobile, tipMessage]);
+
+  const MobileKeyList = () => (
+    <div className="mobile-key-list" aria-label="Mobile controls">
+      <div className="mobile-key-row">
+        <span className="mobile-key-pill">Tap left of shape</span>
+        <span className="mobile-key-hint">Move left</span>
+      </div>
+      <div className="mobile-key-row">
+        <span className="mobile-key-pill">Tap right of shape</span>
+        <span className="mobile-key-hint">Move right</span>
+      </div>
+      <div className="mobile-key-row">
+        <span className="mobile-key-pill">Tap below shape</span>
+        <span className="mobile-key-hint">Fast drop</span>
+      </div>
+    </div>
+  );
+
+  const MobileBrand = () => (
+    <div className="mobile-brand-card" aria-label="SpaceSlip brand">
+      <div className="mobile-brand-mark">SS</div>
+      <div className="mobile-brand-text">
+        <div className="mobile-brand-title">SpaceSlip</div>
+        <div className="mobile-brand-subtitle">Rotate. Align. Glide through the gap.</div>
+      </div>
+    </div>
+  );
+
+  const handleCanvasTap = useCallback(
+    (clientX, clientY) => {
+      if (!isMobile) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      handleTapControl(clientX, clientY, rect);
+    },
+    [canvasRef, handleTapControl, isMobile]
+  );
+
+  const handleTouchStart = useCallback(
+    (event) => {
+      if (!isMobile || !event.touches || event.touches.length === 0) return;
+      const touch = event.touches[0];
+      handleCanvasTap(touch.clientX, touch.clientY);
+    },
+    [handleCanvasTap, isMobile]
+  );
+
+  const handleClick = useCallback(
+    (event) => {
+      if (!isMobile) return;
+      handleCanvasTap(event.clientX, event.clientY);
+    },
+    [handleCanvasTap, isMobile]
+  );
+
   return (
     <section className={`game-root ${isMobile ? "is-mobile" : "is-desktop"}`}>
       <div className="game-frame">
@@ -133,12 +207,15 @@ const Game = () => {
                   <span className="hud-value">{score}</span>
                 </div>
                 <div className="hud-chip">
-                  <span className="hud-label">Best</span>
-                  <span className="hud-value">{highScore}</span>
+                  <span className="hud-label">Time to Impact</span>
+                  <span className="hud-value mono">{timeToDrop != null ? `${timeToDrop}s` : "--"}</span>
                 </div>
               </div>
 
               <div className="hud-right">
+                <button className="hud-btn" onClick={toggleSound}>
+                  {soundOn ? "🔊" : "🔇"}
+                </button>
                 <button
                   className="hud-btn"
                   onClick={togglePause}
@@ -150,17 +227,34 @@ const Game = () => {
             </div>
           )}
 
+          {isMobile && mobileTipVisible && (
+            <div className="mobile-tip-pop" aria-live="polite">
+              {tipMessage}
+            </div>
+          )}
+
           <div className="game-area arena-tall">
-            <canvas ref={canvasRef} className="game-canvas" />
+            <canvas
+              ref={canvasRef}
+              className="game-canvas"
+              onClick={isMobile ? undefined : handleClick}
+              onTouchStart={isMobile ? handleTouchStart : undefined}
+            />
 
             {perfectActive && <div className="perfect-chip">Solar flare!</div>}
 
             {!gameRunning && !gameOver && (
               <div className="game-overlay subtle">
                 <div className="overlay-inner">
+                  {isMobile && (
+                    <div className="mobile-brand-wrapper">
+                      <MobileBrand />
+                    </div>
+                  )}
                   <button className="primary-btn" onClick={handleStart}>
                     Start
                   </button>
+                  {isMobile && <MobileKeyList />}
                 </div>
               </div>
             )}
@@ -168,6 +262,11 @@ const Game = () => {
             {paused && !gameOver && (
               <div className="game-overlay subtle">
                 <div className="overlay-inner">
+                  {isMobile && (
+                    <div className="mobile-brand-wrapper">
+                      <MobileBrand />
+                    </div>
+                  )}
                   <h3>Paused</h3>
                   <div className="overlay-actions">
                     <button className="primary-btn ghost" onClick={restartGame}>
@@ -177,6 +276,7 @@ const Game = () => {
                       {pauseLabel}
                     </button>
                   </div>
+                  {isMobile && <MobileKeyList />}
                 </div>
               </div>
             )}
@@ -184,6 +284,11 @@ const Game = () => {
             {gameOver && (
               <div className="game-overlay gameover">
                 <div className="overlay-inner">
+                  {isMobile && (
+                    <div className="mobile-brand-wrapper">
+                      <MobileBrand />
+                    </div>
+                  )}
                   <p className="eyebrow">Game Over</p>
                   <h3>Score {score}</h3>
                   <p className="overlay-copy">Best {highScore}</p>
@@ -192,6 +297,7 @@ const Game = () => {
                       Restart
                     </button>
                   </div>
+                  {isMobile && <MobileKeyList />}
                 </div>
               </div>
             )}
@@ -234,11 +340,17 @@ const Game = () => {
             >
               {pauseLabel}
             </button>
+
+            <button className="secondary-btn" onClick={toggleSound}>
+              {soundOn ? "🔊 Sound" : "🔇 Sound"}
+            </button>
           </div>
 
-          <div className="rail-note" aria-live="polite">
-            {tipMessage}
-          </div>
+          {tipMessage && (
+            <div className="rail-note" aria-live="polite">
+              {tipMessage}
+            </div>
+          )}
         </aside>
       </div>
     </section>

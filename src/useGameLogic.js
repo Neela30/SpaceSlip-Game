@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createAlienState,
   drawAlienShots,
@@ -40,12 +40,14 @@ const ROTATE_STEP = 90; // ✅ force 90° rotation per action
 const GAP_MOVE_DELAY = 200; // wait briefly before sliding the bar after a pass
 
 const TIP_COPY = {
-  start: 'Rotate with A/D, left/right arrows or Space (or tap the side arrows), then slide through the glowing gap.',
   reward: 'Grab the golden star to widen the gap and slow your fall for a bit.',
-  aliens: 'Aliens are firing ahead—one bullet costs 0.5 point, two hits and you lose—stay in the gap for cover.'
+  aliens: 'Aliens are firing ahead - one bullet costs 0.5 point, two hits and you lose - stay in the gap for cover.'
 };
 
 const FAST_DROP_MULTIPLIER = 1.9;
+const FAST_DROP_DURATION = 450;
+const NUDGE_STEP_MIN = 18;
+const NUDGE_STEP_MAX = 44;
 
 const useGameLogic = () => {
   const canvasRef = useRef(null);
@@ -123,6 +125,7 @@ const useGameLogic = () => {
   const lastAimTimeRef = useRef(null);
   const targetVXRef = useRef(0);
   const dropBoostRef = useRef(1);
+  const fastDropTimerRef = useRef(null);
 
   // ✅ NEW: track whether this falling object has already crossed the bar successfully
   const passedBarRef = useRef(false);
@@ -135,6 +138,29 @@ const useGameLogic = () => {
     (rotation = rotationRef.current, type = shapeTypeRef.current) => baseGetShapeSize(rotation, type),
     []
   );
+
+  const [soundOn, setSoundOn] = useState(true);
+  const soundOnRef = useRef(true);
+
+  const playSound = useCallback(
+    (fn) => {
+      if (!soundOnRef.current) return;
+      fn();
+    },
+    [soundOnRef]
+  );
+
+  const toggleSound = useCallback(() => {
+    const next = !soundOnRef.current;
+    soundOnRef.current = next;
+    setSoundOn(next);
+    if (audioCtxRef.current?.state === 'suspended' && next) {
+      audioCtxRef.current.resume();
+    }
+    if (audioCtxRef.current?.state === 'running' && !next) {
+      audioCtxRef.current.suspend();
+    }
+  }, [audioCtxRef]);
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -436,7 +462,7 @@ const useGameLogic = () => {
 
   const handleAlienHit = useCallback(
     (shapeBounds, lethal = true) => {
-      sfx.fail();
+      playSound(sfx.fail);
       vibrate(150);
       shakeRef.current = 12;
       const cx = shapeBounds.x + shapeBounds.width / 2;
@@ -455,7 +481,7 @@ const useGameLogic = () => {
       setGameRunning(false);
       setPaused(false);
     },
-    [sfx, spawnParticles, setTimeToDrop, setRewardActive, setGameOver, setGameRunning, setPaused, runningRef, setScore]
+    [playSound, sfx, spawnParticles, setTimeToDrop, setRewardActive, setGameOver, setGameRunning, setPaused, runningRef, setScore]
   );
 
   const spawnShape = useCallback(
@@ -530,7 +556,7 @@ const useGameLogic = () => {
 
       const prevGapX = gapXRef.current;
 
-      sfx.chime();
+      playSound(sfx.chime);
       squashRef.current = 0.9;
 
       const nextGapWidth = Math.max(MIN_GAP, currentGapWidth - GAP_SHRINK);
@@ -591,9 +617,13 @@ const useGameLogic = () => {
     shakeRef.current = 0;
     setRewardActive(false);
     dropBoostRef.current = 1;
+    if (fastDropTimerRef.current) {
+      clearTimeout(fastDropTimerRef.current);
+      fastDropTimerRef.current = null;
+    }
     starTipShownRef.current = false;
     alienTipShownRef.current = false;
-    setTipMessage(TIP_COPY.start);
+    setTipMessage('');
 
     totalHitsRef.current = 0;
     shapeDamageRef.current = 0;
@@ -689,9 +719,9 @@ const useGameLogic = () => {
       setShapeX(clampedX);
 
       squashRef.current = 1.04;
-      sfx.click();
+      playSound(sfx.click);
     },
-    [gameOver, gameRunning, getShapeSize, paused, sfx, setShapeRotation, setShapeX]
+    [gameOver, gameRunning, getShapeSize, paused, playSound, sfx, setShapeRotation, setShapeX]
   );
 
   const rotateLeft = useCallback(() => rotateBy(-ROTATE_STEP), [rotateBy]);
@@ -705,6 +735,61 @@ const useGameLogic = () => {
   const stopFastDrop = useCallback(() => {
     dropBoostRef.current = 1;
   }, []);
+
+  const pulseFastDrop = useCallback(() => {
+    startFastDrop();
+    if (fastDropTimerRef.current) clearTimeout(fastDropTimerRef.current);
+    fastDropTimerRef.current = setTimeout(() => {
+      stopFastDrop();
+      fastDropTimerRef.current = null;
+    }, FAST_DROP_DURATION);
+  }, [startFastDrop, stopFastDrop]);
+
+  const nudgeHorizontal = useCallback(
+    (direction) => {
+      if (!gameRunning || paused || gameOver || !direction) return;
+      const { width } = getShapeSize();
+      const step = Math.max(NUDGE_STEP_MIN, Math.min(NUDGE_STEP_MAX, width * 0.45));
+      const nextX = clamp(shapeXRef.current + step * direction, 0, GAME_WIDTH - width);
+      shapeXRef.current = nextX;
+      setShapeX(nextX);
+      squashRef.current = 1.02;
+      playSound(sfx.click);
+    },
+    [gameOver, gameRunning, getShapeSize, paused, playSound, setShapeX, sfx]
+  );
+
+  const handleTapControl = useCallback(
+    (clientX, clientY, rect) => {
+      if (!gameRunning || paused || gameOver || !rect) return;
+
+      const normX = clamp((clientX - rect.left) * (GAME_WIDTH / rect.width), 0, GAME_WIDTH);
+      const normY = clamp((clientY - rect.top) * (GAME_HEIGHT / rect.height), 0, GAME_HEIGHT);
+
+      const { width, height } = getShapeSize();
+      const shapeLeft = shapeXRef.current;
+      const shapeRight = shapeLeft + width;
+      const shapeBottom = shapeYRef.current + height;
+      const shapeCenter = shapeLeft + width / 2;
+
+      const withinX = normX >= shapeLeft && normX <= shapeRight;
+      const belowShape = normY >= shapeBottom + 6;
+
+      // Fast drop only when tapping directly below the object footprint
+      if (withinX && belowShape) {
+        pulseFastDrop();
+        return;
+      }
+
+      const direction = normX < shapeCenter ? -1 : 1;
+      if (direction < 0) {
+        rotateLeft();
+      } else {
+        rotateRight();
+      }
+    },
+    [gameOver, gameRunning, getShapeSize, paused, pulseFastDrop, rotateLeft, rotateRight]
+  );
 
   useEffect(() => {
     if (!gameRunning || paused) {
@@ -841,7 +926,7 @@ const useGameLogic = () => {
 
         if (hitWall) {
           // blast at impact point
-          sfx.fail();
+          playSound(sfx.fail);
           vibrate(140);
           shakeRef.current = 12;
 
@@ -925,6 +1010,7 @@ const useGameLogic = () => {
     return () => {
       if (perfectTimerRef.current) clearTimeout(perfectTimerRef.current);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (fastDropTimerRef.current) clearTimeout(fastDropTimerRef.current);
     };
   }, [drawFrame, gapXRef, perfectTimerRef, rafRef]);
 
@@ -934,6 +1020,9 @@ const useGameLogic = () => {
     rotateRight,
     startFastDrop,
     stopFastDrop,
+    handleTapControl,
+    soundOn,
+    toggleSound,
     startGame,
     restartGame,
     togglePause,
@@ -950,7 +1039,9 @@ const useGameLogic = () => {
     wallY: coreState.wallY,
     perfectActive,
     timeToDrop,
-    tipMessage
+    tipMessage,
+    soundOn,
+    toggleSound
   };
 };
 

@@ -28,9 +28,7 @@ export const createCoreState = () => {
   const [highScore, setHighScore] = useState(0);
   const [timeToDrop, setTimeToDrop] = useState(null);
   const [rewardActive, setRewardActive] = useState(false);
-  const [tipMessage, setTipMessage] = useState(
-    'Press Start, then rotate with A/D, left/right arrows or Space to slip through the gap.'
-  );
+  const [tipMessage, setTipMessage] = useState('');
 
   const refs = {
     shapeXRef: useRef((GAME_WIDTH - LONG_SIDE) / 2),
