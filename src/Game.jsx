@@ -110,8 +110,8 @@ const Game = () => {
     [decorateLeaderboard, leaderboardTop50Raw]
   );
   const sidebarLeaderboard = useMemo(
-    () => leaderboardTop5.filter((entry) => !entry.isGuest).slice(0, 3),
-    [leaderboardTop5]
+    () => leaderboardTop50.filter((entry) => !entry.isGuest).slice(0, 3),
+    [leaderboardTop50]
   );
 
   const upsertRawEntry = useCallback((rawList, entry, limit = 50) => {
@@ -169,6 +169,10 @@ const Game = () => {
   useEffect(() => {
     refreshTop5();
   }, [refreshTop5]);
+
+  useEffect(() => {
+    loadTop50();
+  }, [loadTop50]);
 
   useEffect(() => {
     if (leaderboardOpen) {
