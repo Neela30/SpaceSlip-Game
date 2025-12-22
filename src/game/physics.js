@@ -32,7 +32,6 @@ export const getOrientedAABB = ({ x, y, width, height, rotation = 0 }) => {
 
 export const getShapeSize = (_rotation = 0, type = 'rectangle') => {
   const variant = SHAPE_LOOKUP[type] || SHAPE_LOOKUP[SHAPE_ORDER[0]];
-  // Compute a single footprint per type; rotation only affects orientation, not size.
 
   if (variant.kind === 'rectangle') {
     const insetLong = 18;
@@ -64,6 +63,5 @@ export const getShapeSize = (_rotation = 0, type = 'rectangle') => {
     return { width: usableBase, height: usableHeight };
   }
 
-  // Fallback to a conservative default if an unknown type is provided.
   return { width: LONG_SIDE - HITBOX_INSET * 2, height: SHORT_SIDE - HITBOX_INSET * 2 };
 };

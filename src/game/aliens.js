@@ -18,9 +18,9 @@ export const ALIEN_CONFIG = {
   SAFE_MARGIN: 12,
   SHAPE_LIVES: 2,
 
-  // Aim behavior
-  AIM_TIME_MS: 420,     // time spent aiming before firing
-  LEAD_FACTOR: 0.35     // predicts a little where the target will be
+
+  AIM_TIME_MS: 420,
+  LEAD_FACTOR: 0.35
 };
 
 export const createAlienState = () => ({
@@ -69,7 +69,7 @@ export const spawnAlienWave = (state, { wallY, gapX, gapWidth, gameWidth, now = 
       lastShot: now + ALIEN_CONFIG.FIRE_DELAY + idx * 220,
       laneIndex: idx,
 
-      // aiming state
+
       aiming: false,
       aimUntil: 0,
       aimTarget: { x: 0, y: 0 },
@@ -88,12 +88,7 @@ export const maybeActivateAliens = (state, score, spawnFn) => {
   return false;
 };
 
-/**
- * NOTE: This now expects target info so aliens can aim.
- * You must pass these from useGameLogic:
- *   targetX, targetY (center of falling object ideally)
- *   targetVX, targetVY (optional)
- */
+
 export const updateAliensForFrame = (
   state,
   { delta, now, gapX, gapWidth, gameWidth, targetX, targetY, targetVX = 0, targetVY = 0 }
@@ -105,7 +100,7 @@ export const updateAliensForFrame = (
   const rightBounds = lanes[1];
 
   state.aliensRef.current.forEach((alien) => {
-    // walk
+
     alien.x += alien.dir * alien.speed * delta;
 
     const lane = alien.laneIndex === 1 ? rightBounds : leftBounds;
@@ -120,14 +115,14 @@ export const updateAliensForFrame = (
       alien.dir = -1;
     }
 
-    // face target if present
+
     if (Number.isFinite(targetX)) {
       alien.face = targetX >= alien.x ? 1 : -1;
     } else {
       alien.face = alien.dir >= 0 ? 1 : -1;
     }
 
-    // shooting with aim phase
+
     const readyToShoot = now - alien.lastShot >= alien.cooldown;
     const bulletCapOk = state.bulletsRef.current.length < 16;
 
@@ -136,7 +131,7 @@ export const updateAliensForFrame = (
       return;
     }
 
-    // start aiming
+
     if (!alien.aiming) {
       alien.aiming = true;
       alien.aimUntil = now + ALIEN_CONFIG.AIM_TIME_MS;
@@ -147,10 +142,10 @@ export const updateAliensForFrame = (
       return;
     }
 
-    // still aiming
+
     if (now < alien.aimUntil) return;
 
-    // fire
+
     alien.aiming = false;
 
     const muzzleX = alien.x + ALIEN_CONFIG.WIDTH / 2;
@@ -162,7 +157,7 @@ export const updateAliensForFrame = (
     const dx = tx - muzzleX;
     const dy = ty - muzzleY;
 
-    // ensure generally upward shots (negative y)
+
     const safeDy = dy < -8 ? dy : -80;
     const len = Math.max(1, Math.hypot(dx, safeDy));
     const nx = dx / len;
@@ -219,7 +214,7 @@ export const updateAlienBullets = (state, { delta, shapeBounds, gameHeight, onHi
   return { hit: false, lethal: false };
 };
 
-/** ✅ NEW ALIEN LOOK: clearly alien-ish + walk + aim pose */
+
 export const drawAlien = (ctx, alien, now) => {
   const W = ALIEN_CONFIG.WIDTH;
   const H = ALIEN_CONFIG.HEIGHT;
@@ -227,7 +222,7 @@ export const drawAlien = (ctx, alien, now) => {
   ctx.save();
   ctx.translate(alien.x, alien.y);
 
-  // walk/idle motion
+
   const t = now / 1000;
   const stride = Math.sin(t * 9 + alien.x * 0.06) * 1.8;
   const bob = Math.sin(t * 6 + alien.x * 0.03) * 0.7;
@@ -236,44 +231,44 @@ export const drawAlien = (ctx, alien, now) => {
   const facing = alien.face ?? (alien.dir >= 0 ? 1 : -1);
   ctx.translate(0, bob);
 
-  // shadow on wall
+
   ctx.save();
   ctx.globalAlpha = 0.35;
   ctx.fillStyle = 'rgba(0,0,0,0.32)';
   drawRoundedRect(ctx, 3, H - 4, W - 6, 4, 2, 'rgba(0,0,0,0.25)');
   ctx.restore();
 
-  // backpack / tank
+
   ctx.save();
   ctx.translate(W / 2, 12);
   ctx.scale(facing, 1);
   drawRoundedRect(ctx, -W * 0.46, 2, 8, 14, 4, 'rgba(30,18,60,0.9)', 'rgba(255,255,255,0.10)');
   ctx.restore();
 
-  // legs
+
   ctx.save();
   ctx.translate(W / 2, H - 2);
   ctx.scale(facing, 1);
   ctx.fillStyle = '#2a1648';
-  // left leg
+
   ctx.save();
   ctx.rotate((stride * Math.PI) / 180);
   drawRoundedRect(ctx, -W * 0.22, -2, 6, 8, 3, '#2a1648');
   ctx.restore();
-  // right leg
+
   ctx.save();
   ctx.rotate((-stride * Math.PI) / 180);
   drawRoundedRect(ctx, W * 0.16, -2, 6, 8, 3, '#2a1648');
   ctx.restore();
   ctx.restore();
 
-  // torso
+
   const torsoGrad = ctx.createLinearGradient(0, 6, 0, H);
   torsoGrad.addColorStop(0, '#7e4dff');
   torsoGrad.addColorStop(1, '#35ccff');
   drawRoundedRect(ctx, 4, 10, W - 8, H - 10, 9, torsoGrad, 'rgba(255,255,255,0.16)');
 
-  // head (big alien dome)
+
   ctx.save();
   ctx.translate(W / 2, 8);
   ctx.scale(facing, 1);
@@ -292,19 +287,19 @@ export const drawAlien = (ctx, alien, now) => {
   ctx.ellipse(0, 0, 11, 9, 0, 0, Math.PI * 2);
   ctx.stroke();
 
-  // eyes (big)
+
   ctx.fillStyle = '#140b2c';
   ctx.beginPath();
   ctx.ellipse(-4, 1, 3.2, 4.2, -0.15, 0, Math.PI * 2);
   ctx.ellipse(4, 1, 3.2, 4.2, 0.15, 0, Math.PI * 2);
   ctx.fill();
 
-  // eye shine
+
   ctx.fillStyle = 'rgba(120,255,240,0.95)';
   ctx.fillRect(-5.2, -1, 1.2, 1.2);
   ctx.fillRect(2.8, -1, 1.2, 1.2);
 
-  // antenna
+
   ctx.strokeStyle = 'rgba(120,255,240,0.75)';
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -318,7 +313,7 @@ export const drawAlien = (ctx, alien, now) => {
 
   ctx.restore();
 
-  // arm + blaster (aim pose)
+
   ctx.save();
   ctx.translate(W / 2, 16);
   ctx.scale(facing, 1);
@@ -326,11 +321,11 @@ export const drawAlien = (ctx, alien, now) => {
   const armY = 2 + stride * 0.2 + aimPulse * 0.6;
   drawRoundedRect(ctx, 2, armY, 10, 5, 3, '#57f6cd', 'rgba(0,0,0,0.18)');
 
-  // gun
+
   drawRoundedRect(ctx, 10, armY - 1, 10, 7, 3, '#2ae6be', 'rgba(255,255,255,0.12)');
   drawRoundedRect(ctx, 18, armY + 1, 6, 3, 2, '#ffcf70');
 
-  // muzzle flash hint while aiming
+
   if (alien.aiming) {
     ctx.globalAlpha = 0.35 + 0.25 * aimPulse;
     ctx.fillStyle = 'rgba(255, 237, 150, 0.9)';

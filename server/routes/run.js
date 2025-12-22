@@ -110,7 +110,6 @@ const createRunRouter = ({ redis, config }) => {
         return res.status(400).json({ error: 'Run duration too short' });
       }
 
-      // prevent replay
       await redis.del(key);
 
       const userData = await redis.hgetall(userKey(req.user.userId));

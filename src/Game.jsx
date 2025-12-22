@@ -663,7 +663,6 @@ const Game = () => {
   return (
     <section className={`game-root ${isMobile ? "is-mobile" : "is-desktop"}`}>
       <div className="game-frame">
-        {/* LEFT: Brand rail (desktop only) */}
         <aside className="side-rail left-rail" aria-label="Brand">
           <div className="brand-card">
             <div className="brand-mark">SS</div>
@@ -716,9 +715,7 @@ const Game = () => {
           </div>
         </aside>
 
-        {/* CENTER: Game arena */}
         <div className="arena-wrap">
-          {/* MOBILE HUD (top overlay) */}
           {isMobile && (
             <div className="mobile-hud" aria-label="Game HUD">
               <div className="hud-left">
@@ -862,7 +859,6 @@ const Game = () => {
           </div>
         </div>
 
-        {/* RIGHT: Stats + controls rail (desktop only) */}
         <aside className="side-rail right-rail" aria-label="Controls and stats">
           <div className="player-card">
             <div>
