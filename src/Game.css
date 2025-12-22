@@ -12,12 +12,22 @@
   .app-shell {
     padding: 0;
     max-width: none;
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
   }
 }
 
 /* ===== Game layout ===== */
 .game-root {
   width: min(100%, 1180px);
+}
+
+.game-root.is-mobile {
+  width: 100%;
+  min-height: 100svh;
 }
 
 .game-frame {
@@ -35,7 +45,12 @@
 
 .is-mobile .game-frame {
   grid-template-columns: 1fr;
-  height: 100dvh;
+  grid-template-rows: 1fr;
+  min-height: 100svh;
+  max-height: 100dvh;
+  width: 100%;
+  gap: 0;
+  overflow: hidden;
   border-radius: 0;
   padding: 0;
   border: none;
@@ -138,6 +153,13 @@
   position: relative;
 }
 
+.game-root.is-mobile .arena-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 .game-area {
   position: relative;
   width: 100%;
@@ -158,12 +180,14 @@
 
 /* MOBILE: full screen canvas */
 .is-mobile .game-area.arena-tall {
-  height: 100dvh;
+  flex: 1;
+  min-height: 100svh;
+  width: min(100vw, calc(100dvh * 9 / 16));
+  height: min(100dvh, calc(100vw * 16 / 9));
   max-height: 100dvh;
-  width: 100vw;
   border-radius: 0;
-  aspect-ratio: auto;
-  margin: 0;
+  aspect-ratio: 9 / 16;
+  margin: 0 auto;
 }
 
 .game-canvas {
@@ -191,6 +215,37 @@
   display: flex;
   gap: 10px;
   align-items: center;
+}
+
+.game-root.is-mobile .mobile-hud {
+  top: clamp(8px, 3vw, 14px);
+  left: clamp(8px, 3vw, 14px);
+  right: clamp(8px, 3vw, 14px);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.game-root.is-mobile .hud-left,
+.game-root.is-mobile .hud-right {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.game-root.is-mobile .hud-right {
+  justify-content: flex-end;
+}
+
+.game-root.is-mobile .hud-chip {
+  min-width: clamp(82px, 28vw, 140px);
+}
+
+.game-root.is-mobile .hud-btn {
+  flex: 1 1 45%;
+}
+
+.game-root.is-mobile .hud-btn.mobile-auth-btn {
+  white-space: nowrap;
 }
 
 .hud-chip {
@@ -283,6 +338,47 @@
 
 .game-overlay.gameover {
   background: rgba(3, 6, 12, 0.82);
+}
+
+.game-root.is-mobile .game-overlay {
+  background: rgba(2, 6, 14, 0.92);
+  backdrop-filter: blur(12px);
+}
+
+.game-root.is-mobile .game-overlay.subtle {
+  background: rgba(2, 6, 14, 0.9);
+}
+
+.game-root.is-mobile .overlay-inner {
+  background: rgba(9, 14, 24, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.35);
+}
+
+.overlay-player {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.overlay-player-label {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  color: #9fb3cc;
+}
+
+.overlay-player-name {
+  font-weight: 900;
+  color: #f4fbff;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .overlay-inner {
@@ -381,6 +477,14 @@
 .mobile-key-hint {
   color: #a9bddb;
   font-weight: 700;
+}
+
+.mobile-overlay-menu {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .overlay-actions {
@@ -612,7 +716,21 @@
   border-radius: 20px;
   padding: 20px;
   width: min(540px, 95vw);
+  max-height: min(90vh, 90svh);
+  overflow: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+
+@media (max-width: 920px) {
+  .modal-backdrop {
+    padding: clamp(12px, 4vw, 20px);
+  }
+
+  .modal-panel {
+    width: 100%;
+    max-width: 620px;
+    max-height: calc(100svh - 24px);
+  }
 }
 
 .modal-header {

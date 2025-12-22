@@ -395,7 +395,6 @@ const Game = () => {
     }
   }, [guestProfile, syncHighScore]);
 
-  const handleOpenLeaderboard = useCallback(() => setLeaderboardOpen(true), []);
   const handleCloseLeaderboard = useCallback(() => setLeaderboardOpen(false), []);
   const safeUsername = user?.username || guestProfile?.username || "Guest";
 
@@ -470,6 +469,21 @@ const Game = () => {
     return () => clearTimeout(id);
   }, [isMobile, tipMessage]);
 
+  const pauseIfActive = useCallback(() => {
+    if (!gameRunning || paused || gameOver) return;
+    togglePause();
+  }, [gameOver, gameRunning, paused, togglePause]);
+
+  const handleOpenLeaderboard = useCallback(() => {
+    pauseIfActive();
+    setLeaderboardOpen(true);
+  }, [pauseIfActive]);
+
+  const handleOpenAuth = useCallback(() => {
+    pauseIfActive();
+    setAuthVisible(true);
+  }, [pauseIfActive]);
+
   const MobileKeyList = () => (
     <div className="mobile-key-list" aria-label="Mobile controls">
       <div className="mobile-key-row">
@@ -494,6 +508,20 @@ const Game = () => {
         <div className="mobile-brand-title">SpaceSlip</div>
         <div className="mobile-brand-subtitle">Rotate. Align. Glide through the gap.</div>
       </div>
+    </div>
+  );
+
+  const MobileOverlayNav = () => (
+    <div className="mobile-overlay-menu">
+      <button className="secondary-btn ghost" onClick={handleOpenLeaderboard}>
+        Leaderboard
+      </button>
+      <button
+        className="secondary-btn ghost"
+        onClick={isAuthenticated ? handleLogout : handleOpenAuth}
+      >
+        {isAuthenticated ? "Log out" : "Login / Register"}
+      </button>
     </div>
   );
 
@@ -612,9 +640,19 @@ const Game = () => {
                 >
                   {pauseLabel}
                 </button>
-                <button className="hud-btn ghost" onClick={handleOpenLeaderboard}>
-                  Leaderboard
-                </button>
+                {(!gameRunning || paused || gameOver) && (
+                  <>
+                    <button className="hud-btn ghost" onClick={handleOpenLeaderboard}>
+                      Leaderboard
+                    </button>
+                    <button
+                      className="hud-btn ghost mobile-auth-btn"
+                      onClick={isAuthenticated ? handleLogout : handleOpenAuth}
+                    >
+                      {isAuthenticated ? "Log out" : "Login / Register"}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -643,9 +681,16 @@ const Game = () => {
                       <MobileBrand />
                     </div>
                   )}
+                  {isMobile && (
+                    <div className="overlay-player">
+                      <span className="overlay-player-label">Player</span>
+                      <span className="overlay-player-name" title={safeUsername}>{safeUsername}</span>
+                    </div>
+                  )}
                   <button className="primary-btn" onClick={handleStart}>
                     Start
                   </button>
+                  {isMobile && <MobileOverlayNav />}
                   {isMobile && <MobileKeyList />}
                 </div>
               </div>
@@ -659,6 +704,12 @@ const Game = () => {
                       <MobileBrand />
                     </div>
                   )}
+                  {isMobile && (
+                    <div className="overlay-player">
+                      <span className="overlay-player-label">Player</span>
+                      <span className="overlay-player-name" title={safeUsername}>{safeUsername}</span>
+                    </div>
+                  )}
                   <h3>Paused</h3>
                   <div className="overlay-actions">
                     <button className="primary-btn ghost" onClick={handleRestart}>
@@ -668,6 +719,7 @@ const Game = () => {
                       {pauseLabel}
                     </button>
                   </div>
+                  {isMobile && <MobileOverlayNav />}
                   {isMobile && <MobileKeyList />}
                 </div>
               </div>
@@ -681,6 +733,12 @@ const Game = () => {
                       <MobileBrand />
                     </div>
                   )}
+                  {isMobile && (
+                    <div className="overlay-player">
+                      <span className="overlay-player-label">Player</span>
+                      <span className="overlay-player-name" title={safeUsername}>{safeUsername}</span>
+                    </div>
+                  )}
                   <p className="eyebrow">Game Over</p>
                   <h3>Score {score}</h3>
                   <p className="overlay-copy">Best {bestScoreDisplay}</p>
@@ -689,6 +747,7 @@ const Game = () => {
                       Restart
                     </button>
                   </div>
+                  {isMobile && <MobileOverlayNav />}
                   {isMobile && <MobileKeyList />}
                 </div>
               </div>
@@ -710,7 +769,7 @@ const Game = () => {
                   Log out
                 </button>
               ) : (
-                <button className="link-btn" onClick={() => setAuthVisible(true)}>
+                <button className="link-btn" onClick={handleOpenAuth}>
                   Login / Register
                 </button>
               )}

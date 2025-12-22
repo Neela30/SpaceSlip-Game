@@ -32,6 +32,20 @@ body {
   height: 100vh;
 }
 
+@media (max-width: 920px) {
+  body {
+    height: 100svh;
+    max-height: none;
+    overflow-x: hidden;
+    align-items: stretch;
+  }
+
+  #root {
+    height: 100%;
+    min-height: 100svh;
+  }
+}
+
 button {
   font-family: inherit;
   cursor: pointer;
