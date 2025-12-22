@@ -1,7 +1,8 @@
 import { LEADERBOARD_KEY, userKey } from './keys.js';
 
 const SEED_USERNAMES = new Set(['orion', 'nova', 'lumen', 'comet', 'eclipse', 'testuser123']);
-const normalizeUsername = (value = '') => value.toString().trim().toLowerCase();
+export const normalizeUsername = (value = '') => value.toString().trim().toLowerCase();
+export const isGuestUserId = (value = '') => typeof value === 'string' && value.startsWith('guest:');
 
 export const fetchLeaderboard = async (redis, limit = 5, { excludeSeeds = true } = {}) => {
   const windowSize = excludeSeeds ? Math.max(limit, 50) : limit;
@@ -27,7 +28,12 @@ export const fetchLeaderboard = async (redis, limit = 5, { excludeSeeds = true }
 
   const hydrated = pairs.map((entry, idx) => {
     const data = results?.[idx]?.[1] || {};
-    return { username: data.username || 'Unknown', score: entry.score };
+    const isGuest = isGuestUserId(entry.userId) || data.isGuest === 'true';
+    return {
+      username: data.username || 'Unknown',
+      score: entry.score,
+      isGuest
+    };
   });
 
   const filtered = hydrated
@@ -37,6 +43,24 @@ export const fetchLeaderboard = async (redis, limit = 5, { excludeSeeds = true }
   return filtered.slice(0, limit).map((row, idx) => ({
     rank: idx + 1,
     username: row.username,
-    score: row.score
+    score: row.score,
+    isGuest: Boolean(row.isGuest)
   }));
+};
+
+export const pruneGuestEntries = async (redis, limit = 50) => {
+  const overflow = await redis.zrevrange(LEADERBOARD_KEY, limit, -1);
+  if (!overflow || overflow.length === 0) return { removed: 0 };
+
+  const guestIds = overflow.filter((userId) => isGuestUserId(userId));
+  if (!guestIds.length) return { removed: 0 };
+
+  const pipeline = redis.pipeline();
+  guestIds.forEach((userId) => {
+    pipeline.zrem(LEADERBOARD_KEY, userId);
+    pipeline.del(userKey(userId));
+  });
+  await pipeline.exec();
+
+  return { removed: guestIds.length };
 };

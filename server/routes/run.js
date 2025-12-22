@@ -3,7 +3,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { authMiddleware } from '../middleware/auth.js';
 import { LEADERBOARD_KEY, runKey, userKey } from '../utils/keys.js';
-import { fetchLeaderboard } from '../utils/leaderboard.js';
+import { fetchLeaderboard, pruneGuestEntries } from '../utils/leaderboard.js';
 import { requireRedisReady } from '../middleware/redisReady.js';
 
 const RUN_TTL_SECONDS = 60 * 5;
@@ -122,6 +122,8 @@ const createRunRouter = ({ redis, config }) => {
         .hset(userKey(req.user.userId), { bestScore: newBest })
         .zadd(LEADERBOARD_KEY, newBest, req.user.userId)
         .exec();
+
+      await pruneGuestEntries(redis);
 
       const leaderboardTop5 = await fetchLeaderboard(redis, 5, { excludeSeeds: true });
 

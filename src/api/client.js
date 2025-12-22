@@ -28,5 +28,7 @@ export const api = {
   startRun: (token) => jsonRequest('/api/run/start', { method: 'POST', token }),
   finishRun: (token, payload) => jsonRequest('/api/run/finish', { method: 'POST', token, body: payload }),
   leaderboardTop5: () => jsonRequest('/api/leaderboard/top5'),
-  leaderboardTop50: () => jsonRequest('/api/leaderboard/top50')
+  leaderboardTop50: () => jsonRequest('/api/leaderboard/top50'),
+  claimGuestId: (currentId) => jsonRequest('/api/guest/id', { method: 'POST', body: { currentId } }),
+  submitGuestScore: (payload) => jsonRequest('/api/guest/score', { method: 'POST', body: payload })
 };

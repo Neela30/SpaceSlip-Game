@@ -6,6 +6,7 @@ import Redis from 'ioredis';
 import createAuthRouter from './routes/auth.js';
 import createRunRouter from './routes/run.js';
 import createLeaderboardRouter from './routes/leaderboard.js';
+import createGuestRouter from './routes/guest.js';
 import { authMiddleware } from './middleware/auth.js';
 import { seedLeaderboard } from './utils/seed.js';
 
@@ -64,6 +65,7 @@ app.get('/api/me', authMiddleware(redis, config.jwtSecret), async (req, res) => 
 app.use('/api/auth', createAuthRouter({ redis, config }));
 app.use('/api/run', createRunRouter({ redis, config }));
 app.use('/api/leaderboard', createLeaderboardRouter({ redis }));
+app.use('/api/guest', createGuestRouter({ redis, config }));
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 

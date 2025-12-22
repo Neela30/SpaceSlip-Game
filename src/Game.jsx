@@ -31,6 +31,7 @@ const Game = () => {
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [runSession, setRunSession] = useState(null);
   const [statusMessage, setStatusMessage] = useState("");
+  const [guestInTop50, setGuestInTop50] = useState(false);
   const [submittingScore, setSubmittingScore] = useState(false);
 
   const {
@@ -60,6 +61,16 @@ const Game = () => {
   const isAuthenticated = Boolean(token);
   const bestScoreDisplay = user?.bestScore ?? guestProfile?.bestScore ?? highScore;
 
+  const leaderboardNameBlocklist = useMemo(() => {
+    const names = [];
+    [...leaderboardTop5Raw, ...leaderboardTop50Raw].forEach((entry) => {
+      if (entry?.username) {
+        names.push(entry.username.toString().trim().toLowerCase());
+      }
+    });
+    return new Set(names.filter(Boolean));
+  }, [leaderboardTop50Raw, leaderboardTop5Raw]);
+
   const decorateLeaderboard = useCallback(
     (entries = []) => {
       const normalized = (entries || [])
@@ -67,35 +78,27 @@ const Game = () => {
         .map((entry, idx) => ({
           username: entry.username.trim(),
           score: Number(entry.score) || 0,
-          rank: entry.rank ?? idx + 1
+          rank: entry.rank ?? idx + 1,
+          isGuest: Boolean(entry.isGuest)
         }));
 
       const deduped = new Map();
       normalized.forEach((entry) => {
         const key = entry.username.toLowerCase();
         const existing = deduped.get(key);
-        const best = existing ? Math.max(existing.score, entry.score) : entry.score;
-        deduped.set(key, { ...entry, score: best });
+        const best =
+          existing && existing.score > entry.score
+            ? { ...existing, score: existing.score }
+            : { ...entry };
+        deduped.set(key, best);
       });
-
-      if (guestProfile?.username) {
-        const guestScore = Number(guestProfile.bestScore || 0);
-        if (guestScore > 0) {
-          const guestName = String(guestProfile.username);
-          deduped.set(guestName.trim().toLowerCase(), {
-            username: guestName,
-            score: guestScore,
-            isGuest: true
-          });
-        }
-      }
 
       return Array.from(deduped.values())
         .filter((entry) => entry.score > 0)
         .sort((a, b) => b.score - a.score || a.username.localeCompare(b.username))
         .map((entry, idx) => ({ ...entry, rank: idx + 1 }));
     },
-    [guestProfile]
+    []
   );
 
   const leaderboardTop5 = useMemo(
@@ -110,6 +113,31 @@ const Game = () => {
     () => leaderboardTop5.filter((entry) => !entry.isGuest).slice(0, 3),
     [leaderboardTop5]
   );
+
+  const upsertRawEntry = useCallback((rawList, entry, limit = 50) => {
+    if (!entry || !entry.username) return rawList || [];
+    const clean = {
+      username: String(entry.username).trim(),
+      score: Math.max(0, Number(entry.score) || 0),
+      isGuest: Boolean(entry.isGuest)
+    };
+    const dedup = new Map();
+    [...(rawList || []), clean].forEach((row) => {
+      if (!row || !row.username) return;
+      const key = row.username.toString().trim().toLowerCase();
+      if (!key) return;
+      const existing = dedup.get(key);
+      const rowScore = Math.max(0, Number(row.score) || 0);
+      if (!existing || rowScore > existing.score) {
+        dedup.set(key, { ...row, username: row.username.toString().trim(), score: rowScore });
+      }
+    });
+    return Array.from(dedup.values())
+      .filter((row) => row.score > 0)
+      .sort((a, b) => b.score - a.score || a.username.localeCompare(b.username))
+      .slice(0, limit)
+      .map((row, idx) => ({ ...row, rank: idx + 1 }));
+  }, []);
 
   useEffect(() => {
     const hasTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
@@ -149,6 +177,21 @@ const Game = () => {
   }, [leaderboardOpen, loadTop50]);
 
   useEffect(() => {
+    const guestName = guestProfile?.username?.trim().toLowerCase();
+    if (!guestName) {
+      setGuestInTop50(false);
+      return;
+    }
+    const combined = [...leaderboardTop5Raw, ...leaderboardTop50Raw];
+    const inBoard = combined.some(
+      (entry) =>
+        (entry?.username || "").toString().trim().toLowerCase() === guestName &&
+        Number(entry?.score || 0) > 0
+    );
+    setGuestInTop50(inBoard);
+  }, [guestProfile, leaderboardTop50Raw, leaderboardTop5Raw]);
+
+  useEffect(() => {
     if (!statusMessage) return;
     const timer = setTimeout(() => setStatusMessage(""), 4000);
     return () => clearTimeout(timer);
@@ -178,10 +221,35 @@ const Game = () => {
     };
   }, [token, syncHighScore]);
 
-  const generateGuestId = useCallback(() => {
-    const num = Math.floor(Math.random() * 999) + 1;
-    return `guest${String(num).padStart(3, "0")}`;
-  }, []);
+  const generateGuestId = useCallback(
+    (blockedNames = new Set()) => {
+      const blocked = new Set(
+        Array.from(blockedNames || []).map((name) => name.toString().trim().toLowerCase())
+      );
+      for (let i = 0; i < 40; i++) {
+        const num = Math.floor(Math.random() * 999999) + 1;
+        const candidate = `guest${String(num).padStart(6, "0")}`;
+        if (!blocked.has(candidate.toLowerCase())) {
+          return candidate;
+        }
+      }
+      const fallback = `guest${String(Math.floor(Date.now() % 1000000)).padStart(6, "0")}`;
+      return blocked.has(fallback.toLowerCase()) ? `${fallback}x` : fallback;
+    },
+    []
+  );
+
+  const requestGuestId = useCallback(async () => {
+    try {
+      const response = await api.claimGuestId(guestProfile?.username);
+      if (response?.guestId) {
+        return response.guestId;
+      }
+    } catch (error) {
+      setStatusMessage((prev) => prev || "Unable to reserve guest id, using local id");
+    }
+    return generateGuestId(leaderboardNameBlocklist);
+  }, [generateGuestId, guestProfile?.username, leaderboardNameBlocklist]);
 
   const persistGuestProfile = useCallback((profile) => {
     try {
@@ -194,7 +262,7 @@ const Game = () => {
   const activateGuestProfile = useCallback(
     (profile) => {
       const normalized = {
-        username: profile?.username || generateGuestId(),
+        username: profile?.username || generateGuestId(leaderboardNameBlocklist),
         bestScore: Math.max(0, Number(profile?.bestScore) || 0),
         isGuest: true
       };
@@ -210,24 +278,59 @@ const Game = () => {
       setStatusMessage("");
       setAuthError("");
     },
-    [generateGuestId, persistGuestProfile, syncHighScore]
+    [generateGuestId, leaderboardNameBlocklist, persistGuestProfile, syncHighScore]
   );
 
-  const handleGuestPlay = useCallback(() => {
-    const profile = { username: generateGuestId(), bestScore: 0, isGuest: true };
+  const handleGuestPlay = useCallback(async () => {
+    const profile = { username: await requestGuestId(), bestScore: 0, isGuest: true };
     activateGuestProfile(profile);
     setAuthForm({ username: "", password: "", confirmPassword: "" });
-  }, [activateGuestProfile, generateGuestId]);
+  }, [activateGuestProfile, requestGuestId]);
 
   const updateGuestScore = useCallback(
-    (score) => {
+    async (score) => {
       const bestScore = Math.max(0, Number(score) || 0, Number(guestProfile?.bestScore || 0));
       const profile = guestProfile?.username
         ? { ...guestProfile, bestScore, isGuest: true }
-        : { username: generateGuestId(), bestScore, isGuest: true };
+        : { username: await requestGuestId(), bestScore, isGuest: true };
       activateGuestProfile(profile);
+      setSubmittingScore(true);
+      try {
+        const response = await api.submitGuestScore({
+          guestId: profile.username,
+          score: bestScore
+        });
+        if (Array.isArray(response?.leaderboardTop5)) {
+          setLeaderboardTop5Raw(response.leaderboardTop5);
+        } else {
+          refreshTop5();
+        }
+        if (Array.isArray(response?.leaderboardTop50)) {
+          setLeaderboardTop50Raw(response.leaderboardTop50);
+        }
+        if (response?.inTop50) {
+          if (!Array.isArray(response?.leaderboardTop50)) {
+            loadTop50();
+          }
+        } else {
+          loadTop50();
+        }
+        setGuestInTop50(Boolean(response?.inTop50));
+      } catch (error) {
+        setGuestInTop50(true);
+        const fallbackEntry = { username: profile.username, score: bestScore, isGuest: true };
+        setLeaderboardTop5Raw((prev) => upsertRawEntry(prev, fallbackEntry, 5));
+        setLeaderboardTop50Raw((prev) => upsertRawEntry(prev, fallbackEntry, 50));
+        const message =
+          (error?.message || "").toLowerCase() === "not found"
+            ? "Guest leaderboard endpoint is missing; showing local placement."
+            : error?.message || "Failed to store guest score";
+        setStatusMessage((prev) => prev || message);
+      } finally {
+        setSubmittingScore(false);
+      }
     },
-    [activateGuestProfile, generateGuestId, guestProfile]
+    [activateGuestProfile, guestProfile, loadTop50, refreshTop5, requestGuestId, upsertRawEntry]
   );
 
   useEffect(() => {
@@ -238,7 +341,7 @@ const Game = () => {
 
   useEffect(() => {
     if (!authVisible && !token && !user && !guestProfile) {
-      handleGuestPlay();
+      handleGuestPlay().catch(() => {});
     }
   }, [authVisible, guestProfile, handleGuestPlay, token, user]);
 
@@ -322,7 +425,7 @@ const Game = () => {
   useEffect(() => {
     if (pendingScore == null) return;
     if (user?.isGuest) {
-      updateGuestScore(pendingScore);
+      void updateGuestScore(pendingScore);
       setPendingScore(null);
       return;
     }
@@ -330,7 +433,7 @@ const Game = () => {
       setPendingScore(null);
       return;
     }
-    submitRun(pendingScore);
+    void submitRun(pendingScore);
   }, [pendingScore, token, runSession, submitRun, updateGuestScore, user]);
 
   const handleAuthSubmit = useCallback(
@@ -826,6 +929,12 @@ const Game = () => {
           {statusMessage && (
             <div className="rail-note warning" aria-live="polite">
               {statusMessage}
+            </div>
+          )}
+
+          {guestInTop50 && guestProfile && (
+            <div className="rail-note" aria-live="polite">
+              Guest ID {guestProfile.username} is currently in the top 50.
             </div>
           )}
 
