@@ -11,47 +11,59 @@ export const driftOffsetForMode = (time, amplitude, mode, phase) => {
   return 0;
 };
 
-export const getShapeSize = (rotation = 0, type = 'rectangle') => {
-  const variant = SHAPE_LOOKUP[type] || SHAPE_LOOKUP[SHAPE_ORDER[0]];
-  let width = LONG_SIDE;
-  let height = SHORT_SIDE;
-  let insetX = HITBOX_INSET;
-  let insetY = HITBOX_INSET;
-
-  if (variant.kind === 'rectangle') {
-    insetX = 18;
-    insetY = 10;
-    if (rotation % 180 === 0) {
-      width = variant.long;
-      height = variant.short;
-    } else {
-      width = variant.short;
-      height = variant.long;
-    }
-  } else if (variant.kind === 'square') {
-    insetX = insetY = 12;
-    width = variant.size;
-    height = variant.size;
-  } else if (variant.kind === 'circle') {
-    insetX = insetY = 14;
-    width = variant.size;
-    height = variant.size;
-  } else if (variant.kind === 'triangle') {
-    insetX = 16;
-    insetY = 12;
-    const base = variant.size * 0.82;
-    const triHeight = base * 0.9;
-    if (rotation % 180 === 0) {
-      width = base;
-      height = triHeight;
-    } else {
-      width = triHeight;
-      height = base;
-    }
-  }
+export const getOrientedAABB = ({ x, y, width, height, rotation = 0 }) => {
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  const rad = (rotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const wRot = Math.abs(cos) * width + Math.abs(sin) * height;
+  const hRot = Math.abs(sin) * width + Math.abs(cos) * height;
 
   return {
-    width: Math.max(16, width - insetX * 2),
-    height: Math.max(16, height - insetY * 2)
+    x: cx - wRot / 2,
+    y: cy - hRot / 2,
+    width: wRot,
+    height: hRot,
+    cx,
+    cy
   };
+};
+
+export const getShapeSize = (_rotation = 0, type = 'rectangle') => {
+  const variant = SHAPE_LOOKUP[type] || SHAPE_LOOKUP[SHAPE_ORDER[0]];
+  // Compute a single footprint per type; rotation only affects orientation, not size.
+
+  if (variant.kind === 'rectangle') {
+    const insetLong = 18;
+    const insetShort = 10;
+    const usableLong = Math.max(16, variant.long - insetLong * 2);
+    const usableShort = Math.max(16, variant.short - insetShort * 2);
+    return { width: usableLong, height: usableShort };
+  }
+
+  if (variant.kind === 'square') {
+    const inset = 12;
+    const size = Math.max(16, variant.size - inset * 2);
+    return { width: size, height: size };
+  }
+
+  if (variant.kind === 'circle') {
+    const inset = 14;
+    const size = Math.max(16, variant.size - inset * 2);
+    return { width: size, height: size };
+  }
+
+  if (variant.kind === 'triangle') {
+    const insetLong = 16;
+    const insetShort = 12;
+    const base = variant.size * 0.82;
+    const triHeight = base * 0.9;
+    const usableBase = Math.max(16, base - insetLong * 2);
+    const usableHeight = Math.max(16, triHeight - insetShort * 2);
+    return { width: usableBase, height: usableHeight };
+  }
+
+  // Fallback to a conservative default if an unknown type is provided.
+  return { width: LONG_SIDE - HITBOX_INSET * 2, height: SHORT_SIDE - HITBOX_INSET * 2 };
 };

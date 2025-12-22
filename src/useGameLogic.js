@@ -31,7 +31,13 @@ import {
 } from './game/constants';
 import { renderShape, createStarfield, drawStar } from './game/drawing';
 import { createSfx, vibrate } from './game/audio';
-import { clamp, driftOffsetForMode, lerp, getShapeSize as baseGetShapeSize } from './game/physics';
+import {
+  clamp,
+  driftOffsetForMode,
+  lerp,
+  getShapeSize as baseGetShapeSize,
+  getOrientedAABB
+} from './game/physics';
 import { createCoreState } from './game/state';
 import { collectReward, resetRewards, shouldSpawnReward, spawnReward } from './game/rewards';
 import { SHAPE_LOOKUP, SHAPE_ORDER, SHAPE_VARIANTS } from './game/constants';
@@ -730,7 +736,8 @@ const useGameLogic = (callbacks = {}) => {
       shapeXRef.current = clampedX;
       setShapeX(clampedX);
 
-      squashRef.current = 1.04;
+      // Keep visual scale constant when rotating so the satellite length doesn't appear to change
+      squashRef.current = 1;
       playSound(sfx.click);
     },
     [gameOver, gameRunning, getShapeSize, paused, playSound, sfx, setShapeRotation, setShapeX]
@@ -816,6 +823,7 @@ const useGameLogic = (callbacks = {}) => {
       lastTime = time;
 
       const { width: shapeWidth, height: shapeHeight } = getShapeSize();
+      const rotation = rotationRef.current;
 
       const driftOffset = driftOffsetForMode(time, driftAmplitudeRef.current, driftModeRef.current, driftPhaseRef.current);
 
@@ -847,8 +855,14 @@ const useGameLogic = (callbacks = {}) => {
       const fallSpeed = speedRef.current * dropBoostRef.current;
       const nextY = prevY + fallSpeed * FALL_MULTIPLIER * delta;
 
-      // bounds at nextY (for aiming + bullets)
-      const shapeBounds = { x: shapeXRef.current, y: nextY, width: shapeWidth, height: shapeHeight };
+      // bounds at nextY (for aiming + bullets + wall collision); use rotated AABB so visuals and hits match
+      const shapeBounds = getOrientedAABB({
+        x: shapeXRef.current,
+        y: nextY,
+        width: shapeWidth,
+        height: shapeHeight,
+        rotation
+      });
 
       // reward collection
       if (rewardActive) {
@@ -856,7 +870,12 @@ const useGameLogic = (callbacks = {}) => {
         const half = REWARD_SIZE / 2;
         const sx = shapeBounds.x;
         const sy = shapeBounds.y;
-        if (sx < r.x + half && sx + shapeWidth > r.x - half && sy < r.y + half && sy + shapeHeight > r.y - half) {
+        if (
+          sx < r.x + half &&
+          sx + shapeBounds.width > r.x - half &&
+          sy < r.y + half &&
+          sy + shapeBounds.height > r.y - half
+        ) {
           collectReward({
             rewardActive,
             rewardPosRef,
@@ -929,12 +948,13 @@ const useGameLogic = (callbacks = {}) => {
       // Keep validating while the shape overlaps the bar; only mark success after clearing it fully.
       const barTop = wallYRef.current;
       const barBottom = barTop + WALL_HEIGHT;
-      const shapeTopNext = nextY;
-      const shapeBottomNext = nextY + shapeHeight;
+      const shapeTopNext = shapeBounds.y;
+      const shapeBottomNext = shapeBounds.y + shapeBounds.height;
       const overlappingBar = shapeTopNext < barBottom && shapeBottomNext >= barTop;
 
       if (overlappingBar && !passedBarRef.current) {
-        const hitWall = shapeXRef.current < gapPos || shapeXRef.current + shapeWidth > gapPos + gapWidthRef.current;
+        const hitWall =
+          shapeBounds.x < gapPos || shapeBounds.x + shapeBounds.width > gapPos + gapWidthRef.current;
 
         if (hitWall) {
           // blast at impact point
@@ -942,8 +962,8 @@ const useGameLogic = (callbacks = {}) => {
           vibrate(140);
           shakeRef.current = 12;
 
-          const impactY = barTop - shapeHeight;
-          spawnParticles(shapeXRef.current + shapeWidth / 2, impactY, '#4a5568', 32, 'shard');
+          const impactY = barTop - shapeBounds.height;
+          spawnParticles(shapeBounds.x + shapeBounds.width / 2, impactY, '#4a5568', 32, 'shard');
 
           setTimeToDrop(null);
           setRewardActive(false);
@@ -963,14 +983,13 @@ const useGameLogic = (callbacks = {}) => {
         handleSuccessfulPass({
           gapPos,
           currentGapWidth: gapWidthRef.current,
-          shapeWidth,
-          shapeHeight
+          shapeWidth: shapeBounds.width
         });
       }
 
       // ETA only matters before passing the bar
       if (!passedBarRef.current) {
-        const remaining = wallYRef.current - nextY - shapeHeight;
+        const remaining = wallYRef.current - shapeBounds.y - shapeBounds.height;
         if (time - lastEtaUpdateRef.current > 90) {
           const etaSeconds = remaining > 0 ? remaining / (fallSpeed * FALL_MULTIPLIER * 60) : 0;
           setTimeToDrop(Number(etaSeconds.toFixed(1)));
@@ -984,7 +1003,7 @@ const useGameLogic = (callbacks = {}) => {
       drawFrame(gapPos, undefined, time, delta);
 
       // ✅ respawn only after it has visually passed through and left the screen
-      if (passedBarRef.current && nextY > GAME_HEIGHT + 60) {
+      if (passedBarRef.current && shapeBounds.y > GAME_HEIGHT + 60) {
         passedBarRef.current = false;
         spawnShape(true);
       }
