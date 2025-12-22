@@ -49,9 +49,10 @@ const FAST_DROP_DURATION = 450;
 const NUDGE_STEP_MIN = 18;
 const NUDGE_STEP_MAX = 44;
 
-const useGameLogic = () => {
+const useGameLogic = (callbacks = {}) => {
   const canvasRef = useRef(null);
   const { state: coreState, setters, refs, initialWallY } = createCoreState();
+  const { onGameOver } = callbacks;
 
   const {
     gameRunning,
@@ -119,6 +120,7 @@ const useGameLogic = () => {
   const { shapeDamageRef, totalHitsRef } = alienStateRef.current;
   const starTipShownRef = useRef(false);
   const alienTipShownRef = useRef(false);
+  const prevGameOverRef = useRef(false);
 
   // ✅ aiming velocity tracking for aliens
   const lastTargetXRef = useRef(null);
@@ -449,6 +451,16 @@ const useGameLogic = () => {
         setHighScore(value);
         localStorage.setItem('perfect-fit-highscore', String(value));
       }
+    },
+    [highScoreRef, setHighScore]
+  );
+
+  const syncHighScore = useCallback(
+    (value = 0) => {
+      const next = Math.max(0, Number(value) || 0);
+      highScoreRef.current = next;
+      setHighScore(next);
+      localStorage.setItem('perfect-fit-highscore', String(next));
     },
     [highScoreRef, setHighScore]
   );
@@ -1006,6 +1018,13 @@ const useGameLogic = () => {
   }, [gameRunning, runningRef]);
 
   useEffect(() => {
+    if (gameOver && !prevGameOverRef.current && typeof onGameOver === 'function') {
+      onGameOver(scoreRef.current);
+    }
+    prevGameOverRef.current = gameOver;
+  }, [gameOver, onGameOver, scoreRef]);
+
+  useEffect(() => {
     drawFrame(gapXRef.current);
     return () => {
       if (perfectTimerRef.current) clearTimeout(perfectTimerRef.current);
@@ -1040,8 +1059,7 @@ const useGameLogic = () => {
     perfectActive,
     timeToDrop,
     tipMessage,
-    soundOn,
-    toggleSound
+    syncHighScore
   };
 };
 
