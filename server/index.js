@@ -3,6 +3,9 @@ import dotenv from 'dotenv';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import Redis from 'ioredis';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 import createAuthRouter from './routes/auth.js';
 import createRunRouter from './routes/run.js';
 import createLeaderboardRouter from './routes/leaderboard.js';
@@ -11,6 +14,9 @@ import { authMiddleware } from './middleware/auth.js';
 import { seedLeaderboard } from './utils/seed.js';
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 4000;
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -37,6 +43,7 @@ app.use(
     origin: process.env.CLIENT_ORIGIN || true
   })
 );
+
 app.use(express.json({ limit: '1mb' }));
 
 const globalLimiter = rateLimit({
@@ -66,6 +73,14 @@ app.use('/api/auth', createAuthRouter({ redis, config }));
 app.use('/api/run', createRunRouter({ redis, config }));
 app.use('/api/leaderboard', createLeaderboardRouter({ redis }));
 app.use('/api/guest', createGuestRouter({ redis, config }));
+
+const distPath = path.join(__dirname, '../dist');
+app.use(express.static(distPath));
+
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path === '/health') return next();
+  res.sendFile(path.join(distPath, 'index.html'));
+});
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
