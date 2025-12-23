@@ -932,11 +932,11 @@ const Game = () => {
             </div>
           )}
 
-          {guestInTop50 && guestProfile && (
+          {/* {guestInTop50 && guestProfile && (
             <div className="rail-note" aria-live="polite">
               Guest ID {guestProfile.username} is currently in the top 50.
             </div>
-          )}
+          )} */}
 
           {tipMessage && (
             <div className="rail-note" aria-live="polite">
